@@ -79,24 +79,27 @@
 
 {% endblock content %} {% block js %}
 <script type="text/javascript">
+  // 1. Initialisation du panier
   if (localStorage.getItem("panier") == null) {
     var panier = {};
   } else {
     panier = JSON.parse(localStorage.getItem("panier"));
   }
 
+  // CORRECTION : Mettre à jour le chiffre dès le chargement de la page
+  document.getElementById("panier-count").innerHTML =
+    Object.keys(panier).length;
+
   $(document).on("click", ".ted", function () {
     var item_id = this.id.toString();
     var name = document.getElementById("a" + item_id).innerText;
 
-    // On récupère le prix sans le symbole
     var priceText = document.getElementById("price" + item_id).innerText;
     var price = parseFloat(priceText.replace("€", "").trim());
 
     if (panier[item_id] != undefined) {
       var quantity = panier[item_id][0] + 1;
       panier[item_id][0] = quantity;
-      // Logique vidéo : on stocke le cumul pour cet article
       panier[item_id][2] += price;
     } else {
       var quantity = 1;
@@ -104,8 +107,11 @@
     }
 
     localStorage.setItem("panier", JSON.stringify(panier));
-    document.getElementById("panier").innerHTML =
-      "Panier(" + Object.keys(panier).length + ")";
+
+    // CORRECTION : Mettre à jour le badge au lieu de changer tout le texte du bouton
+    document.getElementById("panier-count").innerHTML =
+      Object.keys(panier).length;
+
     AfficherList(panier);
   });
 
