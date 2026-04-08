@@ -1,0 +1,60 @@
+{% extends "shop/base.html" %} {% block content %}
+<div class="row justify-content-center mt-5">
+  <div class="col-md-5">
+    <div class="card shadow">
+      <div class="card-body p-5">
+        <h3 class="text-center mb-4 fw-bold">Connexion administration</h3>
+
+        <form method="post" action="{{ app_path }}">
+          {% csrf_token %} {% if form.non_field_errors %}
+          <div class="alert alert-danger">
+            {% for error in form.non_field_errors %}
+            <div>{{ error }}</div>
+            {% endfor %}
+          </div>
+          {% endif %}
+
+          <div class="mb-3">
+            <label class="form-label fw-bold" for="id_username"
+              >Nom d'utilisateur</label
+            >
+            <input
+              type="text"
+              name="username"
+              id="id_username"
+              class="form-control"
+              required
+              autofocus
+            />
+          </div>
+
+          <div class="mb-4">
+            <label class="form-label fw-bold" for="id_password"
+              >Mot de passe</label
+            >
+            <input
+              type="password"
+              name="password"
+              id="id_password"
+              class="form-control"
+              required
+            />
+          </div>
+
+          {% if next %}
+          <input type="hidden" name="next" value="{{ next }}" />
+          {% endif %}
+
+          <button type="submit" class="btn btn-primary w-100 btn-lg">
+            Connexion
+          </button>
+        </form>
+
+        <p class="text-center mt-3 mb-0">
+          <a href="{% url 'admin_password_reset' %}">Mot de passe oublié ?</a>
+        </p>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

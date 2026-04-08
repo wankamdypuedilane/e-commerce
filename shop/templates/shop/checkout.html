@@ -1,4 +1,6 @@
-{% extends "shop/base.html" %} {% block content %}
+{% extends "shop/base.html" %} {% block content %} {% if error %}
+<div class="alert alert-danger">{{ error }}</div>
+{% endif %}
 <div class="row mb-4">
   <div class="col-md-12">
     <ul id="item-list" class="list-group shadow-sm">
@@ -147,17 +149,25 @@
   var total = 0;
   var number = 0;
 
-  for (var item in panier) {
-    var quantity = panier[item][0];
-    var name = panier[item][1];
-    var priceTotalArticle = panier[item][2];
+  // Tableau qu'on enverra à Django — uniquement id + quantité, jamais le prix
+  var itemsPourDjango = [];
 
-    // Calcul du prix unitaire
+  for (var id in panier) {
+    var quantity = panier[id][0];
+    var name = panier[id][1];
+    var priceTotalArticle = panier[id][2];
     var unitPrice = priceTotalArticle / quantity;
 
     number += quantity;
     total += priceTotalArticle;
 
+    // On prépare l'envoi — SANS le prix
+    itemsPourDjango.push({
+      id: parseInt(id), // l'ID du produit en base
+      quantity: quantity,
+    });
+
+    // Affichage dans la liste (inchangé)
     var itemString = `
       <li class="list-group-item d-flex justify-content-between align-items-center p-3">
         <div>
@@ -169,25 +179,24 @@
           <span class="fw-bold text-success" style="font-size: 1.1em;">${priceTotalArticle.toFixed(2)} €</span>
         </div>
       </li>`;
-
     $("#item-list").append(itemString);
   }
 
-  // Ligne visuelle du total en bas de liste
-  var itemNumber = `
-      <li class="list-group-item d-flex justify-content-between align-items-center list-group-item-warning p-3 mt-2 shadow-sm">
-        <b class="text-uppercase">Total de votre commande</b>
-        <div class="text-end">
-          <span class="badge bg-dark rounded-pill">Articles : ${number}</span>
-          <br>
-          <span class="fw-bold text-dark" style="font-size: 1.4em;">${total.toFixed(2)} €</span>
-        </div>
-      </li>`;
+  // Ligne total (inchangée)
+  var totalLigne = `
+    <li class="list-group-item d-flex justify-content-between align-items-center list-group-item-warning p-3 mt-2 shadow-sm">
+      <b class="text-uppercase">Total de votre commande</b>
+      <div class="text-end">
+        <span class="badge bg-dark rounded-pill">Articles : ${number}</span><br>
+        <span class="fw-bold text-dark" style="font-size: 1.4em;">${total.toFixed(2)} €</span>
+      </div>
+    </li>`;
+  $("#item-list").append(totalLigne);
 
-  $("#item-list").append(itemNumber);
+  // Champ total — juste pour l'affichage, Django l'ignore
+  $("#total").val(total.toFixed(2) + " €");
 
-  // MISE À JOUR DES CHAMPS POUR DJANGO (CORRECT)
-  $("#total").val(total.toFixed(2) + " €"); // On ajoute le + pour la concaténation
-  $("#items").val(JSON.stringify(panier));
+  // Champ items — uniquement id + quantité
+  $("#items").val(JSON.stringify(itemsPourDjango));
 </script>
 {% endblock %}

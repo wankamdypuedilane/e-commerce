@@ -1,0 +1,33 @@
+{% extends "shop/base.html" %} {% block content %}
+<div class="row mt-4">
+  <div class="col-md-10 offset-md-1">
+    <h3 class="mb-4">Bonjour, {{ request.user.username }} 👋</h3>
+
+    {% if commandes %}
+    <h5 class="mb-3">Vos commandes</h5>
+    {% for commande in commandes %}
+    <div class="card mb-3 shadow-sm">
+      <div class="card-body">
+        <div class="d-flex justify-content-between">
+          <h6>
+            Commande #{{ commande.id }} — {{ commande.date_commande|date:"d/m/Y
+            H:i" }}
+          </h6>
+          <span class="badge bg-secondary"
+            >{{ commande.get_status_display }}</span
+          >
+        </div>
+        <p class="mb-1">Total : <strong>{{ commande.total }} €</strong></p>
+        <p class="mb-0 text-muted">
+          {{ commande.address }}, {{ commande.ville }}, {{ commande.pays }}
+        </p>
+      </div>
+    </div>
+    {% endfor %} {% else %}
+    <div class="alert alert-info">
+      Vous n'avez pas encore passé de commande.
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
