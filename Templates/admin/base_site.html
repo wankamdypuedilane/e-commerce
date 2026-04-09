@@ -1,0 +1,91 @@
+{% extends "admin/base.html" %} {% block title %}Administration
+Dilane-shop{%endblock %} {% block branding %}
+
+<h1 id="site-name">
+  <a href="{% url 'admin:index' %}">Dilane-shop Administration</a>
+</h1>
+{% endblock %} {% block nav-global %}
+<a class="admin-store-link" href="/">Retour au site</a>
+{% endblock %} {% block extrastyle %}{{ block.super }}
+<style>
+  :root {
+    --admin-primary: #0d6efd;
+    --admin-primary-dark: #0a58ca;
+    --admin-accent: #198754;
+    --admin-bg: #f6f9ff;
+    --admin-text: #1f2937;
+  }
+
+  body {
+    background: var(--admin-bg);
+    color: var(--admin-text);
+  }
+
+  #header {
+    background: linear-gradient(
+      120deg,
+      var(--admin-primary),
+      var(--admin-primary-dark)
+    );
+    color: #fff;
+  }
+
+  #site-name a,
+  #header a:link,
+  #header a:visited {
+    color: #fff;
+    font-weight: 700;
+  }
+
+  .admin-store-link {
+    display: inline-block;
+    margin-left: 14px;
+    padding: 6px 10px;
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.15);
+    color: #fff !important;
+  }
+
+  #user-tools {
+    font-size: 0.9rem;
+  }
+
+  .module h2,
+  .module caption,
+  .inline-group h2 {
+    background: var(--admin-primary);
+  }
+
+  a:link,
+  a:visited {
+    color: var(--admin-primary-dark);
+  }
+
+  .button,
+  input[type="submit"],
+  input[type="button"],
+  .submit-row input,
+  a.button {
+    background: var(--admin-accent);
+    border: none;
+    border-radius: 8px;
+  }
+
+  .button:hover,
+  input[type="submit"]:hover,
+  input[type="button"]:hover,
+  .submit-row input:hover,
+  a.button:hover {
+    background: #146c43;
+  }
+
+  .breadcrumbs {
+    background: #e9f1ff;
+    color: #1f2937;
+  }
+
+  .dashboard .module table th {
+    width: 100%;
+  }
+</style>
+{% endblock %}

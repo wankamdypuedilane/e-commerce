@@ -30,6 +30,39 @@
       integrity="sha384-G/EV+4j2dNv+tEPo3++6LCgdCROaejBqfUeNjuKAiuXbjrxilcCdDz6ZAVfHWe1Y"
       crossorigin="anonymous"
     ></script>
+    <style>
+      .password-field {
+        position: relative;
+      }
+
+      .password-field .form-control {
+        padding-right: 3rem;
+      }
+
+      .password-toggle-btn {
+        position: absolute;
+        top: 50%;
+        right: 0.75rem;
+        transform: translateY(-50%);
+        border: 0;
+        background: transparent;
+        padding: 0;
+        line-height: 0;
+        color: #6c757d;
+        box-shadow: none;
+      }
+
+      .password-toggle-btn:hover,
+      .password-toggle-btn:focus {
+        color: #495057;
+        box-shadow: none;
+      }
+
+      .password-toggle-btn svg {
+        width: 1.15rem;
+        height: 1.15rem;
+      }
+    </style>
   </head>
   <body>
     {% if messages %}
@@ -78,12 +111,8 @@
                       id="panier"
                       type="button"
                       class="btn btn-secondary position-relative me-3"
-                      data-bs-container="body"
-                      data-bs-toggle="popover"
-                      data-bs-placement="bottom"
-                      data-bs-html="true"
                     >
-                      Panier
+                      🛒 Panier
                       <span
                         id="panier-count"
                         class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger"
@@ -94,7 +123,9 @@
                   </li>
                   {% if request.user.is_authenticated %}
                   <li class="nav-item">
-                    <a class="nav-link" href="{% url 'profil' %}">Mon profil</a>
+                    <a class="nav-link" href="{% url 'profil' %}"
+                      >Mes commandes</a
+                    >
                   </li>
                   <li class="nav-item">
                     <a
@@ -124,5 +155,136 @@
       {% block content %}{% endblock content %}
     </div>
   </body>
+  <script type="text/javascript">
+    window.cartStorageKey =
+      "{% if request.user.is_authenticated %}panier_user_{{ request.user.id }}{% else %}panier_guest{% endif %}";
+  </script>
   {%block js%} {%endblock%}
+  <script type="text/javascript">
+    $(document).on("click", ".toggle-password", function () {
+      var targetId = $(this).attr("data-target");
+      var input = document.getElementById(targetId);
+      if (!input) return;
+
+      var eyeIcon =
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.1 12C3.9 7.3 7.7 4 12 4s8.1 3.3 9.9 8c-1.8 4.7-5.6 8-9.9 8s-8.1-3.3-9.9-8Z"/><circle cx="12" cy="12" r="3"/></svg>';
+      var eyeSlashIcon =
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3l18 18"/><path d="M10.6 10.6A3 3 0 0 0 12 15a3 3 0 0 0 3-3 3 3 0 0 0-.4-1.4"/><path d="M9.9 4.2A9.7 9.7 0 0 1 12 4c4.3 0 8.1 3.3 9.9 8a17.8 17.8 0 0 1-4.2 5.6"/><path d="M6.1 6.1A17.9 17.9 0 0 0 2.1 12c1.8 4.7 5.6 8 9.9 8 1 0 2-.2 3-.5"/></svg>';
+
+      var isPassword = input.getAttribute("type") === "password";
+      input.setAttribute("type", isPassword ? "text" : "password");
+      $(this)
+        .attr(
+          "aria-label",
+          isPassword ? "Masquer le mot de passe" : "Afficher le mot de passe",
+        )
+        .attr(
+          "title",
+          isPassword ? "Masquer le mot de passe" : "Afficher le mot de passe",
+        )
+        .html(isPassword ? eyeSlashIcon : eyeIcon);
+    });
+  </script>
+  <script type="text/javascript">
+    (function () {
+      if (window.cartPopoverManaged) {
+        return;
+      }
+
+      var popoverBtn = document.getElementById("panier");
+      if (!popoverBtn) {
+        return;
+      }
+
+      function getPanier() {
+        var storageKey = window.cartStorageKey || "panier_guest";
+        var stored = localStorage.getItem(storageKey);
+        return stored ? JSON.parse(stored) : {};
+      }
+
+      function getPopover() {
+        var instance = bootstrap.Popover.getInstance(popoverBtn);
+        if (!instance) {
+          instance = new bootstrap.Popover(popoverBtn, {
+            html: true,
+            trigger: "manual",
+            placement: "bottom",
+            container: "body",
+            sanitize: false,
+            content: function () {
+              return popoverBtn.getAttribute("data-bs-content") || "";
+            },
+          });
+        }
+        return instance;
+      }
+
+      function updatePanierUI() {
+        var panier = getPanier();
+        var panierString =
+          "<h5 style='color:#2c3e50; border-bottom:2px solid #2c3e50; padding-bottom:5px;'>🛒 Votre panier</h5>";
+        var itemCount = 0;
+        var index = 1;
+
+        if (Object.keys(panier).length === 0) {
+          panierString += "<p style='margin:8px 0;'>Votre panier est vide.</p>";
+        }
+
+        for (var id in panier) {
+          itemCount += panier[id][0];
+          panierString +=
+            "<div style='display:flex; justify-content:space-between; align-items:center; padding:6px 0; border-bottom:1px solid #eee;'><span>" +
+            index +
+            ". " +
+            panier[id][1] +
+            "</span><span class='badge bg-success rounded-pill'>x" +
+            panier[id][0] +
+            "</span></div>";
+          index += 1;
+        }
+
+        if (Object.keys(panier).length > 0) {
+          panierString +=
+            "<a href='/checkout' class='btn btn-primary mt-3 w-100'>Valider votre commande</a>";
+        }
+
+        popoverBtn.setAttribute("data-bs-content", panierString);
+        var popover = getPopover();
+        if (popover.tip && popover.tip.classList.contains("show")) {
+          popover.setContent({ ".popover-body": panierString });
+        }
+
+        var badge = document.getElementById("panier-count");
+        if (badge) {
+          badge.innerHTML = itemCount;
+        }
+      }
+
+      $(document).on("click", "#panier", function (event) {
+        event.preventDefault();
+        event.stopPropagation();
+
+        updatePanierUI();
+        var popover = getPopover();
+        if (popover.tip && popover.tip.classList.contains("show")) {
+          popover.hide();
+        } else {
+          popover.show();
+        }
+      });
+
+      $(document).on("click", function (event) {
+        if ($(event.target).closest("#panier, .popover").length) {
+          return;
+        }
+
+        var popover = bootstrap.Popover.getInstance(popoverBtn);
+        if (popover) {
+          popover.hide();
+        }
+      });
+
+      updatePanierUI();
+    })();
+  </script>
 </html>

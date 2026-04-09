@@ -12,10 +12,16 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 
 from pathlib import Path
 import os
+try:
+    from dotenv import load_dotenv
+except ImportError:
+    def load_dotenv(*args, **kwargs):
+        return False
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 TEMPLATES_DIRS = os.path.join(BASE_DIR, 'Templates')
+load_dotenv(BASE_DIR / '.env')
 
 
 # Quick-start development settings - unsuitable for production
@@ -124,6 +130,16 @@ LOGIN_URL = '/connexion/'
 LOGIN_REDIRECT_URL = '/'
 LOGOUT_REDIRECT_URL = '/'
 
-# Email backend for local development (password reset emails in terminal)
-EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
-DEFAULT_FROM_EMAIL = 'no-reply@dilane-shop.local'
+# Authenticate users with either email or username.
+AUTHENTICATION_BACKENDS = [
+    'shop.backends.EmailOrUsernameModelBackend',
+]
+
+# Email configuration - Brevo SMTP
+EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+EMAIL_HOST = 'smtp-relay.brevo.com'
+EMAIL_PORT = 587
+EMAIL_USE_TLS = True
+EMAIL_HOST_USER = os.getenv('BREVO_SMTP_LOGIN', '')
+EMAIL_HOST_PASSWORD = os.getenv('BREVO_SMTP_KEY', '')
+DEFAULT_FROM_EMAIL = os.getenv('EMAIL_FROM', 'wankamdypuedilane@gmail.com')
