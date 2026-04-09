@@ -2,8 +2,8 @@
 from django.shortcuts import render, redirect
 from django.contrib import messages
 from django.core.paginator import Paginator
-from django.contrib.auth import login, logout, authenticate
-from django.contrib.auth.forms import UserCreationForm, AuthenticationForm
+from django.contrib.auth import login, logout
+from .forms import SignupForm, EmailAuthenticationForm
 from django.contrib.auth.decorators import login_required
 from .models import Product, Commande
 import json
@@ -138,27 +138,27 @@ def confirmation(request):
 
 def inscription(request):
     if request.method == 'POST':
-        form = UserCreationForm(request.POST)
+        form = SignupForm(request.POST)
         if form.is_valid():
             user = form.save()
             login(request, user)
             messages.success(request, f"Bienvenue {user.username}, votre compte a été créé !")
             return redirect('home')
     else:
-        form = UserCreationForm()
+        form = SignupForm()
     return render(request, 'shop/inscription.html', {'form': form})
 
 
 def connexion(request):
     if request.method == 'POST':
-        form = AuthenticationForm(data=request.POST)
+        form = EmailAuthenticationForm(request, data=request.POST)
         if form.is_valid():
             user = form.get_user()
             login(request, user)
             messages.success(request, f"Bienvenue {user.username} !")
             return redirect('home')
     else:
-        form = AuthenticationForm()
+        form = EmailAuthenticationForm(request)
     return render(request, 'shop/connexion.html', {'form': form})
 
 
@@ -171,4 +171,4 @@ def deconnexion(request):
 @login_required(login_url='/connexion/')
 def profil(request):
     commandes = Commande.objects.filter(user=request.user).order_by('-date_commande')
-    return render(request, 'shop/profil.html', {'commandes': commandes})
+    return render(request, 'shop/mes_commandes.html', {'commandes': commandes})

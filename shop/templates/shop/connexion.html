@@ -8,24 +8,48 @@
           {% csrf_token %}
 
           <div class="mb-3">
-            <label class="form-label fw-bold">Nom d'utilisateur</label>
-            <input type="text" name="username" class="form-control" required />
+            <label class="form-label fw-bold">Email</label>
+            <input type="email" name="username" class="form-control" required />
           </div>
 
           <div class="mb-4">
             <label class="form-label fw-bold">Mot de passe</label>
-            <input
-              type="password"
-              name="password"
-              class="form-control"
-              required
-            />
+            <div class="password-field">
+              <input
+                type="password"
+                name="password"
+                id="password-login"
+                class="form-control"
+                required
+              />
+              <button
+                type="button"
+                class="password-toggle-btn toggle-password"
+                data-target="password-login"
+                aria-label="Afficher le mot de passe"
+                title="Afficher le mot de passe"
+              >
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  aria-hidden="true"
+                >
+                  <path
+                    d="M2.1 12C3.9 7.3 7.7 4 12 4s8.1 3.3 9.9 8c-1.8 4.7-5.6 8-9.9 8s-8.1-3.3-9.9-8Z"
+                  />
+                  <circle cx="12" cy="12" r="3" />
+                </svg>
+              </button>
+            </div>
           </div>
 
           {% if form.errors %}
-          <div class="alert alert-danger">
-            Nom d'utilisateur ou mot de passe incorrect.
-          </div>
+          <div class="alert alert-danger">Email ou mot de passe incorrect.</div>
           {% endif %}
 
           <button type="submit" class="btn btn-primary w-100 btn-lg">
