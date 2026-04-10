@@ -1,16 +1,36 @@
 {% extends "shop/base.html" %} {% block content %}
 <div class="row">
   <div class="col-md-12">
-    <form action="" class="card card-sm">
+    <form id="search-form" action="" class="card card-sm">
       <div class="card-body row no-gutters align-items-center">
-        <div class="col">
+        <div class="col-md-6 mb-2 mb-md-0">
           <input
             placeholder="Entrez le nom du produit que vous recherchez"
             name="item-name"
             class="form-control form-control-borderless"
+            value="{{ item_name }}"
           />
         </div>
-        <div class="col-auto">
+        <div class="col-md-4 mb-2 mb-md-0">
+          <select name="category" class="form-select">
+            <option value="">Toutes les catégories</option>
+            {% for category in categories %}
+            <option
+              value="{{ category.id }}"
+              {%
+              if
+              selected_category_id=""
+              ="category.id"
+              %}selected{%
+              endif
+              %}
+            >
+              {{ category.name }}
+            </option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-2 d-grid">
           <button type="submit" class="btn btn-success">Recherche</button>
         </div>
       </div>
@@ -18,17 +38,30 @@
   </div>
 </div>
 
-<div class="row">
+<div id="search-feedback" class="text-muted mt-2"></div>
+
+<div class="row" id="product-grid">
   {% for product in product_object %}
   <div class="col-md-3">
     <div class="card">
       <img
-        src="{{ product.image }}"
+        src="{{ product.display_image_url }}"
         alt="{{ product.title }}"
         class="card-img-top"
       />
       <div class="card-body">
         <div id="a{{product.id}}" class="card-title">{{ product.title }}</div>
+        <div class="mb-2">
+          {% if product.stock == 0 %}
+          <span class="badge bg-danger">Rupture de stock</span>
+          {% elif product.stock < 5 %}
+          <span class="badge bg-warning text-dark"
+            >Plus que {{ product.stock }} en stock</span
+          >
+          {% else %}
+          <span class="badge bg-success">En stock</span>
+          {% endif %}
+        </div>
         <div
           id="price{{product.id}}"
           style="color: green; display: flex; align-items: center"
@@ -37,9 +70,21 @@
           <h6 class="mb-0 me-1">€</h6>
           <span>{{ product.price }}</span>
         </div>
-        <a href="{{product.id}}" class="btn btn-warning me-2">Voir</a
-        ><button id="{{product.id}}" class="btn ted btn-success">
-          Ajouter
+        <a href="{{product.id}}" class="btn btn-warning me-2">Voir</a>
+        <button
+          id="{{product.id}}"
+          class="btn btn-success {% if product.stock > 0 %}ted{% endif %}"
+          {%
+          if
+          product.stock=""
+          ="0"
+          %}disabled
+          style="cursor: not-allowed"
+          {%
+          endif
+          %}
+        >
+          {% if product.stock > 0 %}Ajouter{% else %}Indisponible{% endif %}
         </button>
       </div>
     </div>
@@ -47,13 +92,13 @@
   {% endfor %}
 </div>
 
-<div class="row mt-3">
+<div class="row mt-3" id="index-pagination">
   <div class="col-md-3 offset-md-4">
     <ul class="pagination">
       {% if product_object.has_previous %}
       <li class="page-item">
         <a
-          href="?page={{product_object.previous_page_number}}"
+          href="?page={{ product_object.previous_page_number }}{% if item_name %}&item-name={{ item_name|urlencode }}{% endif %}{% if selected_category_id %}&category={{ selected_category_id }}{% endif %}"
           class="page-link"
           >Précédent</a
         >
@@ -61,15 +106,19 @@
       {%endif%}
 
       <li class="page-item active">
-        <a href="?page={{product_object.number}}" class="page-link"
+        <a
+          href="?page={{ product_object.number }}{% if item_name %}&item-name={{ item_name|urlencode }}{% endif %}{% if selected_category_id %}&category={{ selected_category_id }}{% endif %}"
+          class="page-link"
           >{{product_object.number}}</a
         >
       </li>
 
       {% if product_object.has_next %}
       <li class="page-item">
-        <a href="?page={{product_object.next_page_number}}" class="page-link"
-          >SUivant</a
+        <a
+          href="?page={{ product_object.next_page_number }}{% if item_name %}&item-name={{ item_name|urlencode }}{% endif %}{% if selected_category_id %}&category={{ selected_category_id }}{% endif %}"
+          class="page-link"
+          >Suivant</a
         >
       </li>
       {%endif%}
@@ -148,11 +197,14 @@
 
     for (var x in panier) {
       itemCount += panier[x][0];
-      panierString += `
-        <div style='display:flex; justify-content:space-between; align-items:center; padding:6px 0; border-bottom:1px solid #eee;'>
-          <span>${index}. ${panier[x][1]}</span>
-          <span class='badge bg-success rounded-pill'>x${panier[x][0]}</span>
-        </div>`;
+      panierString +=
+        "<div style='display:flex; justify-content:space-between; align-items:center; padding:6px 0; border-bottom:1px solid #eee;'><span>" +
+        index +
+        ". " +
+        panier[x][1] +
+        "</span><span class='badge bg-success rounded-pill'>x" +
+        panier[x][0] +
+        "</span></div>";
       index += 1;
     }
 
@@ -200,5 +252,167 @@
   });
 
   AfficherList(panier);
+
+  function escapeHtml(text) {
+    return String(text)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/\"/g, "&quot;")
+      .replace(/'/g, "&#039;");
+  }
+
+  function stockBadge(product) {
+    if (product.stock === 0) {
+      return '<span class="badge bg-danger">Rupture de stock</span>';
+    }
+    if (product.stock < 5) {
+      return (
+        '<span class="badge bg-warning text-dark">Plus que ' +
+        product.stock +
+        " en stock</span>"
+      );
+    }
+    return '<span class="badge bg-success">En stock</span>';
+  }
+
+  function renderProducts(products) {
+    var grid = document.getElementById("product-grid");
+    if (!grid) return;
+
+    if (!products.length) {
+      grid.innerHTML =
+        '<div class="col-12"><div class="alert alert-info">Aucun produit trouvé pour ces filtres.</div></div>';
+      return;
+    }
+
+    var html = "";
+    products.forEach(function (product) {
+      var isAvailable = product.stock > 0;
+      var buttonClass = isAvailable ? "btn btn-success ted" : "btn btn-success";
+      var disabledAttr = isAvailable ? "" : "disabled";
+      var cursorStyle = isAvailable ? "" : 'style="cursor:not-allowed;"';
+      var buttonLabel = isAvailable ? "Ajouter" : "Indisponible";
+
+      html +=
+        '<div class="col-md-3"><div class="card">' +
+        '<img src="' +
+        escapeHtml(product.image) +
+        '" alt="' +
+        escapeHtml(product.title) +
+        '" class="card-img-top" />' +
+        '<div class="card-body">' +
+        '<div id="a' +
+        product.id +
+        '" class="card-title">' +
+        escapeHtml(product.title) +
+        "</div>" +
+        '<div class="mb-2">' +
+        stockBadge(product) +
+        "</div>" +
+        '<div id="price' +
+        product.id +
+        '" style="color: green; display: flex; align-items: center" class="card-text">' +
+        '<h6 class="mb-0 me-1">€</h6><span>' +
+        escapeHtml(product.price) +
+        "</span></div>" +
+        '<a href="/' +
+        product.id +
+        '" class="btn btn-warning me-2">Voir</a>' +
+        '<button id="' +
+        product.id +
+        '" class="' +
+        buttonClass +
+        '" ' +
+        disabledAttr +
+        " " +
+        cursorStyle +
+        ">" +
+        buttonLabel +
+        "</button>" +
+        "</div></div></div>";
+    });
+
+    grid.innerHTML = html;
+  }
+
+  var searchInput = document.querySelector('input[name="item-name"]');
+  var categoryInput = document.querySelector('select[name="category"]');
+  var searchForm = document.getElementById("search-form");
+  var searchFeedback = document.getElementById("search-feedback");
+  var pagination = document.getElementById("index-pagination");
+  var productGrid = document.getElementById("product-grid");
+  var initialGridHtml = productGrid ? productGrid.innerHTML : "";
+  var searchTimer = null;
+
+  function runDynamicSearch() {
+    if (!searchInput || !categoryInput) return;
+
+    var itemName = searchInput.value.trim();
+    var category = categoryInput.value;
+    var params = new URLSearchParams();
+
+    if (!itemName && !category) {
+      if (productGrid) {
+        productGrid.innerHTML = initialGridHtml;
+      }
+      if (pagination) {
+        pagination.style.display = "";
+      }
+      if (searchFeedback) {
+        searchFeedback.textContent = "";
+      }
+      return;
+    }
+
+    if (itemName) params.set("item-name", itemName);
+    if (category) params.set("category", category);
+
+    fetch("/api/produits/?" + params.toString(), {
+      headers: { "X-Requested-With": "XMLHttpRequest" },
+    })
+      .then(function (response) {
+        return response.json();
+      })
+      .then(function (data) {
+        renderProducts(data.products || []);
+
+        if (searchFeedback) {
+          var count = (data.products || []).length;
+          searchFeedback.textContent =
+            "Résultats dynamiques: " + count + " produit(s).";
+        }
+
+        if (pagination) {
+          pagination.style.display = "none";
+        }
+      })
+      .catch(function () {
+        if (searchFeedback) {
+          searchFeedback.textContent =
+            "Impossible de charger les résultats dynamiques pour le moment.";
+        }
+      });
+  }
+
+  if (searchInput) {
+    searchInput.addEventListener("input", function () {
+      if (searchTimer) {
+        clearTimeout(searchTimer);
+      }
+      searchTimer = setTimeout(runDynamicSearch, 300);
+    });
+  }
+
+  if (categoryInput) {
+    categoryInput.addEventListener("change", runDynamicSearch);
+  }
+
+  if (searchForm) {
+    searchForm.addEventListener("submit", function (event) {
+      event.preventDefault();
+      runDynamicSearch();
+    });
+  }
 </script>
 {% endblock %}

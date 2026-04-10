@@ -12,6 +12,29 @@
           Commande Confirmée !
         </h2>
 
+        {% if commande %}
+        <p class="mb-3">
+          Référence commande: <strong>#{{ commande.id }}</strong>
+        </p>
+        <div class="alert alert-light text-start">
+          <div>
+            <strong>Sous-total HT:</strong> {{ commande.subtotal_ht }} €
+          </div>
+          <div><strong>TVA:</strong> {{ commande.tax_amount }} €</div>
+          <div><strong>Total TTC:</strong> {{ commande.total }} €</div>
+        </div>
+        {% endif %} {% if payment_status == 'paid' %}
+        <div class="alert alert-success">Paiement validé.</div>
+        {% elif payment_status == 'processing' %}
+        <div class="alert alert-warning">
+          Paiement en cours de confirmation.
+        </div>
+        {% elif payment_status == 'cancelled' %}
+        <div class="alert alert-danger">Paiement annulé.</div>
+        {% elif payment_status == 'failed' %}
+        <div class="alert alert-danger">Le paiement a échoué.</div>
+        {% endif %}
+
         <p class="lead text-dark fs-5">
           Salut <span class="fw-bold">{{nom}}</span>,
         </p>
@@ -26,9 +49,33 @@
           <a href="{% url 'home' %}" class="btn btn-success btn-lg shadow-sm">
             Continuer mes achats
           </a>
+          {% if payment_status == 'cancelled' or payment_status == 'failed' %}
+          <a
+            href="{% url 'checkout' %}"
+            class="btn btn-outline-primary btn-lg shadow-sm ms-2"
+          >
+            Réessayer le paiement
+          </a>
+          {% endif %}
         </div>
       </div>
     </div>
   </div>
 </div>
-{%endblock content%}
+{% if clear_cart %}
+<script type="text/javascript">
+  (function () {
+    var keysToRemove = [];
+    for (var i = 0; i < localStorage.length; i++) {
+      var key = localStorage.key(i);
+      if (key && key.indexOf("panier_") === 0) {
+        keysToRemove.push(key);
+      }
+    }
+
+    keysToRemove.forEach(function (key) {
+      localStorage.removeItem(key);
+    });
+  })();
+</script>
+{% endif %} {%endblock content%}

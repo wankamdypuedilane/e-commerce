@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Confirmation de commande</title>
+  </head>
+  <body
+    style="
+      margin: 0;
+      padding: 0;
+      background: #f7f7f7;
+      font-family: Arial, Helvetica, sans-serif;
+      color: #1f2937;
+    "
+  >
+    <div style="max-width: 640px; margin: 0 auto; padding: 32px 16px">
+      <div
+        style="
+          background: #ffffff;
+          border-radius: 16px;
+          overflow: hidden;
+          box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
+        "
+      >
+        <div
+          style="
+            background: linear-gradient(135deg, #0f766e, #2563eb);
+            color: #ffffff;
+            padding: 28px 32px;
+          "
+        >
+          <div
+            style="
+              font-size: 14px;
+              letter-spacing: 0.08em;
+              text-transform: uppercase;
+              opacity: 0.9;
+            "
+          >
+            {{ site_name }}
+          </div>
+          <h1 style="margin: 12px 0 0; font-size: 28px; line-height: 1.2">
+            Votre commande est confirmée
+          </h1>
+        </div>
+        <div style="padding: 32px">
+          <p style="font-size: 16px; line-height: 1.6; margin: 0 0 16px">
+            Bonjour <strong>{{ commande.nom }}</strong>,
+          </p>
+          <p style="font-size: 16px; line-height: 1.6; margin: 0 0 24px">
+            Nous avons bien reçu votre paiement pour la commande
+            <strong>#{{ commande.id }}</strong>. Votre commande est maintenant
+            en préparation.
+          </p>
+
+          <div
+            style="
+              border: 1px solid #e5e7eb;
+              border-radius: 12px;
+              padding: 20px;
+              margin-bottom: 24px;
+            "
+          >
+            <div
+              style="
+                font-size: 14px;
+                color: #6b7280;
+                margin-bottom: 12px;
+                text-transform: uppercase;
+                letter-spacing: 0.05em;
+              "
+            >
+              Résumé
+            </div>
+            {% for item in items %}
+            <div
+              style="
+                display: flex;
+                justify-content: space-between;
+                gap: 16px;
+                padding: 8px 0;
+                border-bottom: 1px solid #f3f4f6;
+              "
+            >
+              <div>
+                <div style="font-weight: 700">{{ item.title }}</div>
+                <div style="font-size: 13px; color: #6b7280">
+                  Quantité: {{ item.quantity }}
+                </div>
+              </div>
+              <div style="font-weight: 700; white-space: nowrap">
+                {{ item.subtotal }} €
+              </div>
+            </div>
+            {% endfor %}
+            <div
+              style="
+                display: flex;
+                justify-content: space-between;
+                gap: 16px;
+                padding-top: 14px;
+                font-size: 14px;
+                color: #374151;
+              "
+            >
+              <div>Sous-total HT</div>
+              <div>{{ commande.subtotal_ht }} €</div>
+            </div>
+            <div
+              style="
+                display: flex;
+                justify-content: space-between;
+                gap: 16px;
+                padding-top: 8px;
+                font-size: 14px;
+                color: #374151;
+              "
+            >
+              <div>TVA</div>
+              <div>{{ commande.tax_amount }} €</div>
+            </div>
+            <div
+              style="
+                display: flex;
+                justify-content: space-between;
+                gap: 16px;
+                padding-top: 14px;
+                font-size: 18px;
+                font-weight: 800;
+              "
+            >
+              <div>Total TTC</div>
+              <div>{{ commande.total }} €</div>
+            </div>
+          </div>
+
+          <p style="font-size: 15px; line-height: 1.6; margin: 0 0 8px">
+            <strong>Adresse de livraison</strong>
+          </p>
+          <p
+            style="
+              font-size: 15px;
+              line-height: 1.6;
+              margin: 0 0 24px;
+              color: #374151;
+            "
+          >
+            {{ commande.address }}{% if commande.address2 %}, {{
+            commande.address2 }}{% endif %}<br />
+            {{ commande.zipcode }} {{ commande.ville }}<br />
+            {{ commande.pays }}
+          </p>
+
+          <p
+            style="font-size: 13px; line-height: 1.6; margin: 0; color: #6b7280"
+          >
+            Référence de paiement: {{ commande.payment_reference|default:"Non
+            disponible" }}
+          </p>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>
