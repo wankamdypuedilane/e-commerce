@@ -34,6 +34,21 @@ jobs:
     needs: ci
     if: github.ref == 'refs/heads/main'
     steps:
+      - name: Validate deploy secrets
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_PORT: ${{ secrets.EC2_PORT }}
+          EC2_USER: ${{ secrets.EC2_USER }}
+          EC2_PROJECT_PATH: ${{ secrets.EC2_PROJECT_PATH }}
+          EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
+        run: |
+          set -e
+          [[ -n "$EC2_HOST" ]] || { echo "Missing secret: EC2_HOST"; exit 1; }
+          [[ -n "$EC2_USER" ]] || { echo "Missing secret: EC2_USER"; exit 1; }
+          [[ -n "$EC2_PROJECT_PATH" ]] || { echo "Missing secret: EC2_PROJECT_PATH"; exit 1; }
+          [[ -n "$EC2_SSH_KEY" ]] || { echo "Missing secret: EC2_SSH_KEY"; exit 1; }
+          echo "Deploy secrets look present."
+
       - name: Checkout
         uses: actions/checkout@v4
 
@@ -47,8 +62,9 @@ jobs:
           EC2_PORT: ${{ secrets.EC2_PORT }}
           EC2_HOST: ${{ secrets.EC2_HOST }}
         run: |
+          set -e
           PORT="${EC2_PORT:-22}"
-          ssh-keyscan -p "$PORT" -H "$EC2_HOST" >> ~/.ssh/known_hosts
+          ssh-keyscan -T 10 -p "$PORT" -H "$EC2_HOST" >> ~/.ssh/known_hosts
 
       - name: Deploy on EC2
         env:
