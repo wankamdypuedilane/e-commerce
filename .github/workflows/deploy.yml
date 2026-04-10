@@ -64,8 +64,6 @@ jobs:
           chmod 700 ~/.ssh
           printf '%s\n' "$EC2_SSH_KEY" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
-          eval "$(ssh-agent -s)"
-          ssh-add ~/.ssh/deploy_key
 
       - name: Add host key
         env:
@@ -85,7 +83,7 @@ jobs:
         run: |
           set -e
           PORT="${EC2_PORT:-22}"
-          ssh -p "$PORT" "$EC2_USER@$EC2_HOST" "
+          ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes -p "$PORT" "$EC2_USER@$EC2_HOST" "
             set -e
             cd '$EC2_PROJECT_PATH'
             test -d .git
