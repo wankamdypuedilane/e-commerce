@@ -73,10 +73,12 @@ jobs:
           EC2_USER: ${{ secrets.EC2_USER }}
           EC2_PROJECT_PATH: ${{ secrets.EC2_PROJECT_PATH }}
         run: |
+          set -e
           PORT="${EC2_PORT:-22}"
-          ssh -p "$PORT" "$EC2_USER@$EC2_HOST" '
+          ssh -p "$PORT" "$EC2_USER@$EC2_HOST" "
             set -e
-            cd "$EC2_PROJECT_PATH"
+            cd '$EC2_PROJECT_PATH'
+            test -d .git
             git pull --ff-only origin main
             source .venv/bin/activate
             pip install -r requirements.txt
@@ -85,4 +87,4 @@ jobs:
             sudo systemctl restart dilane-shop
             sudo systemctl restart nginx
             python manage.py check --deploy
-          '
+          "
