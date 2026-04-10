@@ -14,14 +14,40 @@
             Commande #{{ commande.id }} — {{ commande.date_commande|date:"d/m/Y
             H:i" }}
           </h6>
-          <span class="badge bg-secondary"
-            >{{ commande.get_status_display }}</span
-          >
+          <div>
+            <span class="badge bg-secondary"
+              >{{ commande.get_status_display }}</span
+            >
+            <span class="badge bg-info text-dark"
+              >Paiement: {{ commande.get_payment_status_display }}</span
+            >
+          </div>
         </div>
-        <p class="mb-1">Total : <strong>{{ commande.total }} €</strong></p>
+        <p class="mb-1">
+          Sous-total HT : <strong>{{ commande.subtotal_ht }} €</strong>
+        </p>
+        <p class="mb-1">TVA : <strong>{{ commande.tax_amount }} €</strong></p>
+        <p class="mb-1">Total TTC : <strong>{{ commande.total }} €</strong></p>
         <p class="mb-0 text-muted">
           {{ commande.address }}, {{ commande.ville }}, {{ commande.pays }}
         </p>
+        <div class="mt-3">
+          <strong>Articles :</strong>
+          {% if commande.order_items.all %}
+          <ul class="mb-0 mt-2">
+            {% for item in commande.order_items.all %}
+            <li>
+              {{ item.product.title|default:"Produit supprimé" }} x{{
+              item.quantity }} — {{ item.price }} €
+            </li>
+            {% endfor %}
+          </ul>
+          {% else %}
+          <p class="text-muted mb-0 mt-2">
+            Détail non disponible pour cette ancienne commande.
+          </p>
+          {% endif %}
+        </div>
       </div>
     </div>
     {% endfor %} {% else %}

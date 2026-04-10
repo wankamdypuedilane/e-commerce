@@ -1,12 +1,30 @@
 from django.urls import path
 from django.contrib.auth import views as auth_views
-from shop.views import index, detail, checkout, confirmation, inscription, connexion, deconnexion, profil
+from shop.views import (
+    index,
+    detail,
+    checkout,
+    confirmation,
+    payment_success,
+    payment_cancel,
+    stripe_webhook,
+    inscription,
+    connexion,
+    deconnexion,
+    profil,
+    search_products,
+)
 
 urlpatterns = [
+    path('api/produits/', search_products, name='search_products'),
+    path('webhooks/stripe/', stripe_webhook, name='stripe_webhook'),
     path('', index, name='home'),
     path('<int:myid>', detail, name='detail'),
     path('checkout', checkout, name="checkout"),
+    path('confirmation/<int:order_id>/', confirmation, name="confirmation_order"),
     path('confirmation', confirmation, name="confirmation"),
+    path('paiement/succes/', payment_success, name='payment_success'),
+    path('paiement/annule/', payment_cancel, name='payment_cancel'),
     path('inscription/', inscription, name='inscription'),
     path('connexion/', connexion, name='connexion'),
     path(

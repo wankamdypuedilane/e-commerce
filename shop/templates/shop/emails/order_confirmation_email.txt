@@ -1,0 +1,15 @@
+Bonjour {{ commande.nom }},
+
+Votre commande #{{ commande.id }} a bien ete enregistree et votre paiement a ete confirme.
+
+Récapitulatif:
+{% for item in items %}- {{ item.title }} x{{ item.quantity }} : {{ item.subtotal }} €
+{% endfor %}
+
+Sous-total HT: {{ commande.subtotal_ht }} €
+TVA: {{ commande.tax_amount }} €
+Total TTC: {{ commande.total }} €
+Reference de paiement: {{ commande.payment_reference|default:"Non disponible" }}
+
+Merci pour votre confiance,
+{{ site_name }}
