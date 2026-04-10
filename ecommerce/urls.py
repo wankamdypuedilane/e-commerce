@@ -19,8 +19,14 @@ from django.urls import path, include
 from django.contrib.auth import views as auth_views
 from django.conf import settings
 from django.conf.urls.static import static
+from django.views.generic import RedirectView
 
 urlpatterns = [
+    path(
+        'gestion/',
+        RedirectView.as_view(pattern_name='admin:index', permanent=False),
+        name='admin_shortcut',
+    ),
     path(
         'admin/password_reset/',
         auth_views.PasswordResetView.as_view(
