@@ -1,16 +1,26 @@
-{% extends "admin/base.html" %} {% load static %} {% block title
-%}Administration Dilane-shop{%endblock %} {% block extrahead %} {{ block.super
-}}
+{% extends "admin/base.html" %}
+{% load static %}
+
+{% block title %}Administration Dilane-shop{% endblock %}
+
+{% block extrahead %}
+{{ block.super }}
 <link rel="icon" type="image/svg+xml" href="{% static 'shop/favicon.svg' %}" />
 <link rel="shortcut icon" href="{% static 'shop/favicon.svg' %}" />
-{% endblock %} {% block branding %}
+{% endblock %}
 
+{% block branding %}
 <h1 id="site-name">
   <a href="{% url 'admin:index' %}">Dilane-shop Administration</a>
 </h1>
-{% endblock %} {% block nav-global %}
+{% endblock %}
+
+{% block nav-global %}
 <a class="admin-store-link" href="/">Retour au site</a>
-{% endblock %} {% block extrastyle %}{{ block.super }}
+{% endblock %}
+
+{% block extrastyle %}
+{{ block.super }}
 <style>
   :root {
     --admin-primary: #0d6efd;
