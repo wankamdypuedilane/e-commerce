@@ -127,7 +127,8 @@
                       >
                     </button>
                   </li>
-                  {% if request.user.is_authenticated and request.user.is_staff %}
+                  {% if request.user.is_authenticated and request.user.is_staff
+                  %}
                   <li class="nav-item">
                     <a
                       class="nav-link text-primary"
@@ -135,8 +136,7 @@
                       >Console Admin</a
                     >
                   </li>
-                  {% endif %}
-                  {% if request.user.is_authenticated %}
+                  {% endif %} {% if request.user.is_authenticated %}
                   <li class="nav-item">
                     <a class="nav-link" href="{% url 'profil' %}"
                       >Mes commandes</a
@@ -149,8 +149,7 @@
                       >Déconnexion</a
                     >
                   </li>
-                  {% endif %}
-                  {% if not request.user.is_authenticated %}
+                  {% endif %} {% if not request.user.is_authenticated %}
                   <li class="nav-item">
                     <a class="nav-link" href="{% url 'connexion' %}"
                       >Connexion</a
