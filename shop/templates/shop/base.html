@@ -1,9 +1,16 @@
 <!doctype html>
 <html lang="en">
   <head>
+    {% load static %}
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>App-Ecommerce</title>
+    <link
+      rel="icon"
+      type="image/svg+xml"
+      href="{% static 'shop/favicon.svg' %}"
+    />
+    <link rel="shortcut icon" href="{% static 'shop/favicon.svg' %}" />
     <link
       href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css"
       rel="stylesheet"
@@ -120,7 +127,8 @@
                       >
                     </button>
                   </li>
-                  {% if request.user.is_authenticated and request.user.is_staff %}
+                  {% if request.user.is_authenticated and request.user.is_staff
+                  %}
                   <li class="nav-item">
                     <a
                       class="nav-link text-primary"
@@ -128,9 +136,7 @@
                       >Console Admin</a
                     >
                   </li>
-                  {% endif %}
-
-                  {% if request.user.is_authenticated %}
+                  {% endif %} {% if request.user.is_authenticated %}
                   <li class="nav-item">
                     <a class="nav-link" href="{% url 'profil' %}"
                       >Mes commandes</a
@@ -143,9 +149,7 @@
                       >Déconnexion</a
                     >
                   </li>
-                  {% endif %}
-
-                  {% if not request.user.is_authenticated %}
+                  {% endif %} {% if not request.user.is_authenticated %}
                   <li class="nav-item">
                     <a class="nav-link" href="{% url 'connexion' %}"
                       >Connexion</a

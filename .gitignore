@@ -1,3 +1,7 @@
 .env
 __pycache__/
 *.pyc
+terraform.tfstate
+terraform.tfstate.*
+*.tfplan
+infra/terraform/tfplan

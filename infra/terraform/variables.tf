@@ -49,3 +49,55 @@ variable "subnet_id" {
   type        = string
   default     = null
 }
+
+variable "git_repo_url" {
+  description = "Git repository URL for the Django application"
+  type        = string
+  default     = "https://github.com/wankamdypuedilane/e-commerce.git"
+}
+
+variable "django_secret_key" {
+  description = "Django SECRET_KEY for application security"
+  type        = string
+  sensitive   = true
+}
+
+variable "database_url" {
+  description = "PostgreSQL connection string (postgresql://user:pass@host:5432/dbname)"
+  type        = string
+  sensitive   = true
+}
+
+variable "stripe_public_key" {
+  description = "Stripe public key for payment processing"
+  type        = string
+  sensitive   = true
+}
+
+variable "stripe_secret_key" {
+  description = "Stripe secret key for payment processing"
+  type        = string
+  sensitive   = true
+}
+
+variable "brevo_smtp_login" {
+  description = "Brevo SMTP login for email sending"
+  type        = string
+  sensitive   = true
+}
+
+variable "brevo_smtp_key" {
+  description = "Brevo SMTP password/key for email sending"
+  type        = string
+  sensitive   = true
+}
+
+variable "email_from" {
+  description = "Email address for sending transactional emails"
+  type        = string
+}
+
+variable "allowed_hosts" {
+  description = "Comma-separated list of allowed hosts for Django"
+  type        = string
+}
