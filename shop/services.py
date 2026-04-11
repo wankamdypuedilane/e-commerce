@@ -63,7 +63,15 @@ def send_order_confirmation_email(commande):
 
     subject = f"Confirmation de commande #{commande.id}"
     text_body = render_to_string('shop/emails/order_confirmation_email.txt', context)
-    html_body = render_to_string('shop/emails/order_confirmation_email.html', context)
+    html_body = None
+    try:
+        html_body = render_to_string('shop/emails/order_confirmation_email.html', context)
+    except Exception as exc:
+        logger.exception(
+            "HTML confirmation email rendering failed for order %s: %s",
+            commande.id,
+            exc,
+        )
 
     email = EmailMultiAlternatives(
         subject=subject,
@@ -71,7 +79,8 @@ def send_order_confirmation_email(commande):
         from_email=settings.DEFAULT_FROM_EMAIL,
         to=[commande.email],
     )
-    email.attach_alternative(html_body, 'text/html')
+    if html_body:
+        email.attach_alternative(html_body, 'text/html')
     email.send(fail_silently=False)
 
     commande.confirmation_email_sent = True

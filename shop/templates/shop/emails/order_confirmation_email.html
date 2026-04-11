@@ -146,8 +146,7 @@
               color: #374151;
             "
           >
-            {{ commande.address }}{% if commande.address2 %}, {{
-            commande.address2 }}{% endif %}<br />
+            {{ commande.address }}{% if commande.address2 %}, {{ commande.address2 }}{% endif %}<br />
             {{ commande.zipcode }} {{ commande.ville }}<br />
             {{ commande.pays }}
           </p>
@@ -155,8 +154,7 @@
           <p
             style="font-size: 13px; line-height: 1.6; margin: 0; color: #6b7280"
           >
-            Référence de paiement: {{ commande.payment_reference|default:"Non
-            disponible" }}
+            Référence de paiement: {{ commande.payment_reference|default:"Non disponible" }}
           </p>
         </div>
       </div>
