@@ -1,5 +1,9 @@
-{% extends "admin/base.html" %} {% block title %}Administration
-Dilane-shop{%endblock %} {% block branding %}
+{% extends "admin/base.html" %} {% load static %} {% block title
+%}Administration Dilane-shop{%endblock %} {% block extrahead %} {{ block.super
+}}
+<link rel="icon" type="image/svg+xml" href="{% static 'shop/favicon.svg' %}" />
+<link rel="shortcut icon" href="{% static 'shop/favicon.svg' %}" />
+{% endblock %} {% block branding %}
 
 <h1 id="site-name">
   <a href="{% url 'admin:index' %}">Dilane-shop Administration</a>

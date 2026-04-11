@@ -95,6 +95,18 @@ resource "aws_instance" "app" {
     volume_type = "gp3"
   }
 
+  user_data = base64encode(templatefile("${path.module}/bootstrap.sh", {
+    git_repo_url      = var.git_repo_url
+    django_secret_key = var.django_secret_key
+    database_url      = var.database_url
+    stripe_public_key = var.stripe_public_key
+    stripe_secret_key = var.stripe_secret_key
+    brevo_smtp_login  = var.brevo_smtp_login
+    brevo_smtp_key    = var.brevo_smtp_key
+    email_from        = var.email_from
+    allowed_hosts     = var.allowed_hosts
+  }))
+
   tags = {
     Name        = "${local.name_prefix}-ec2"
     Project     = var.project_name
