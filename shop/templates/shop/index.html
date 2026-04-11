@@ -17,13 +17,7 @@
             {% for category in categories %}
             <option
               value="{{ category.id }}"
-              {%
-              if
-              selected_category_id=""
-              ="category.id"
-              %}selected{%
-              endif
-              %}
+              {% if selected_category_id == category.id %}selected{% endif %}
             >
               {{ category.name }}
             </option>
@@ -71,21 +65,25 @@
           <span>{{ product.price }}</span>
         </div>
         <a href="{{product.id}}" class="btn btn-warning me-2">Voir</a>
+        {% if product.stock > 0 %}
         <button
           id="{{product.id}}"
-          class="btn btn-success {% if product.stock > 0 %}ted{% endif %}"
-          {%
-          if
-          product.stock=""
-          ="0"
-          %}disabled
-          style="cursor: not-allowed"
-          {%
-          endif
-          %}
+          class="btn btn-success ted"
+          data-stock="{{ product.stock }}"
         >
-          {% if product.stock > 0 %}Ajouter{% else %}Indisponible{% endif %}
+          Ajouter
         </button>
+        {% elif product.stock == 0 %}
+        <button
+          id="{{product.id}}"
+          class="btn btn-success"
+          data-stock="0"
+          disabled
+          style="cursor: not-allowed"
+        >
+          Indisponible
+        </button>
+        {% endif %}
       </div>
     </div>
   </div>
@@ -165,20 +163,36 @@
     return totalItems;
   }
 
+  function getMaxStockForItem(itemId) {
+    var btn = document.getElementById(itemId);
+    if (!btn) return null;
+
+    var raw = btn.getAttribute("data-stock");
+    var stock = parseInt(raw || "", 10);
+    return Number.isFinite(stock) ? stock : null;
+  }
+
   $(document).on("click", ".ted", function () {
     var item_id = this.id.toString();
     var name = document.getElementById("a" + item_id).innerText;
+    var maxStock = parseInt(this.getAttribute("data-stock") || "0", 10);
 
     var priceText = document.getElementById("price" + item_id).innerText;
     var price = parseFloat(priceText.replace("€", "").trim());
+
+    if (maxStock > 0 && panier[item_id] && panier[item_id][0] >= maxStock) {
+      alert("Stock maximum atteint pour ce produit.");
+      return;
+    }
 
     if (panier[item_id] != undefined) {
       var quantity = panier[item_id][0] + 1;
       panier[item_id][0] = quantity;
       panier[item_id][2] += price;
+      panier[item_id][3] = maxStock;
     } else {
       var quantity = 1;
-      panier[item_id] = [quantity, name, price];
+      panier[item_id] = [quantity, name, price, maxStock];
     }
 
     localStorage.setItem(cartStorageKey, JSON.stringify(panier));
@@ -196,15 +210,39 @@
     }
 
     for (var x in panier) {
+      var quantity = panier[x][0];
+      var unitPrice = panier[x][2] / panier[x][0];
       itemCount += panier[x][0];
       panierString +=
-        "<div style='display:flex; justify-content:space-between; align-items:center; padding:6px 0; border-bottom:1px solid #eee;'><span>" +
+        "<div style='padding:6px 0; border-bottom:1px solid #eee;'>" +
+        "<div style='display:flex; justify-content:space-between; align-items:center; gap:8px;'><span>" +
         index +
         ". " +
         panier[x][1] +
         "</span><span class='badge bg-success rounded-pill'>x" +
-        panier[x][0] +
-        "</span></div>";
+        quantity +
+        "</span></div>" +
+        "<div style='display:flex; justify-content:flex-end; gap:6px; margin-top:8px;'>" +
+        "<button type='button' class='btn btn-sm btn-outline-secondary cart-minus' data-id='" +
+        x +
+        "'>-</button>" +
+        "<button type='button' class='btn btn-sm btn-outline-success cart-plus' data-id='" +
+        x +
+        "'>+</button>" +
+        "<button type='button' class='btn btn-sm btn-outline-danger cart-remove' data-id='" +
+        x +
+        "'>Supprimer</button>" +
+        "</div></div>";
+
+      // Keep legacy entries (without max stock) usable.
+      if (panier[x].length < 4) {
+        var inferredMax = getMaxStockForItem(x);
+        if (inferredMax !== null) {
+          panier[x][3] = inferredMax;
+          panier[x][2] = unitPrice * panier[x][0];
+          localStorage.setItem(cartStorageKey, JSON.stringify(panier));
+        }
+      }
       index += 1;
     }
 
@@ -238,6 +276,65 @@
     } else {
       popover.show();
     }
+  });
+
+  $(document).on("click", ".cart-plus", function (event) {
+    event.preventDefault();
+    event.stopPropagation();
+
+    var id = this.getAttribute("data-id");
+    if (!panier[id]) return;
+
+    var unitPrice = panier[id][2] / panier[id][0];
+    var maxStock = panier[id][3];
+    if (!Number.isFinite(maxStock)) {
+      maxStock = getMaxStockForItem(id);
+      if (maxStock !== null) {
+        panier[id][3] = maxStock;
+      }
+    }
+
+    if (Number.isFinite(maxStock) && panier[id][0] >= maxStock) {
+      alert("Stock maximum atteint pour ce produit.");
+      return;
+    }
+
+    panier[id][0] += 1;
+    panier[id][2] += unitPrice;
+    localStorage.setItem(cartStorageKey, JSON.stringify(panier));
+    AfficherList(panier);
+  });
+
+  $(document).on("click", ".cart-minus", function (event) {
+    event.preventDefault();
+    event.stopPropagation();
+
+    var id = this.getAttribute("data-id");
+    if (!panier[id]) return;
+
+    var unitPrice = panier[id][2] / panier[id][0];
+    panier[id][0] -= 1;
+
+    if (panier[id][0] <= 0) {
+      delete panier[id];
+    } else {
+      panier[id][2] -= unitPrice;
+    }
+
+    localStorage.setItem(cartStorageKey, JSON.stringify(panier));
+    AfficherList(panier);
+  });
+
+  $(document).on("click", ".cart-remove", function (event) {
+    event.preventDefault();
+    event.stopPropagation();
+
+    var id = this.getAttribute("data-id");
+    if (!panier[id]) return;
+
+    delete panier[id];
+    localStorage.setItem(cartStorageKey, JSON.stringify(panier));
+    AfficherList(panier);
   });
 
   $(document).on("click", function (event) {
@@ -323,6 +420,8 @@
         product.id +
         '" class="' +
         buttonClass +
+        '" data-stock="' +
+        product.stock +
         '" ' +
         disabledAttr +
         " " +
@@ -344,6 +443,37 @@
   var productGrid = document.getElementById("product-grid");
   var initialGridHtml = productGrid ? productGrid.innerHTML : "";
   var searchTimer = null;
+
+  // Prevent stale localStorage quantities from exceeding visible product stock.
+  function normalizePanierWithCurrentStock() {
+    var changed = false;
+    var stockButtons = document.querySelectorAll("button.ted[data-stock]");
+
+    stockButtons.forEach(function (btn) {
+      var id = btn.id.toString();
+      if (!panier[id]) return;
+
+      var maxStock = parseInt(btn.getAttribute("data-stock") || "0", 10);
+      if (!Number.isFinite(maxStock) || maxStock < 0) return;
+
+      if (panier[id][0] > maxStock) {
+        var unitPrice = panier[id][2] / panier[id][0];
+        panier[id][0] = maxStock;
+        panier[id][2] = unitPrice * maxStock;
+        changed = true;
+      }
+
+      if (panier[id][0] <= 0) {
+        delete panier[id];
+        changed = true;
+      }
+    });
+
+    if (changed) {
+      localStorage.setItem(cartStorageKey, JSON.stringify(panier));
+      AfficherList(panier);
+    }
+  }
 
   function runDynamicSearch() {
     if (!searchInput || !categoryInput) return;
@@ -376,6 +506,7 @@
       })
       .then(function (data) {
         renderProducts(data.products || []);
+        normalizePanierWithCurrentStock();
 
         if (searchFeedback) {
           var count = (data.products || []).length;
@@ -414,5 +545,7 @@
       runDynamicSearch();
     });
   }
+
+  normalizePanierWithCurrentStock();
 </script>
 {% endblock %}
