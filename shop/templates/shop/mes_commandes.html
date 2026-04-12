@@ -10,10 +10,7 @@
     <div class="card mb-3 shadow-sm">
       <div class="card-body">
         <div class="d-flex justify-content-between">
-          <h6>
-            Commande #{{ commande.id }} — {{ commande.date_commande|date:"d/m/Y
-            H:i" }}
-          </h6>
+          <h6>Commande #{{ commande.id }} — {{ commande.date_commande|date:"d/m/Y H:i" }}</h6>
           <div>
             <span class="badge bg-secondary"
               >{{ commande.get_status_display }}</span
@@ -37,8 +34,7 @@
           <ul class="mb-0 mt-2">
             {% for item in commande.order_items.all %}
             <li>
-              {{ item.product.title|default:"Produit supprimé" }} x{{
-              item.quantity }} — {{ item.price }} €
+              {{ item.product.title|default:"Produit supprimé" }} x{{ item.quantity }} — {{ item.price }} €
             </li>
             {% endfor %}
           </ul>
