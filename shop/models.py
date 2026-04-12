@@ -69,6 +69,7 @@ class Commande(models.Model):
     stripe_checkout_session_id = models.CharField(max_length=255, blank=True, null=True, unique=True)
     payment_reference = models.CharField(max_length=255, blank=True, null=True)
     confirmation_email_sent = models.BooleanField(default=False)
+    stock_deducted = models.BooleanField(default=False)
     date_commande = models.DateTimeField(auto_now_add=True)
     user          = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
 

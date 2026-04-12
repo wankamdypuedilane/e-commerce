@@ -92,26 +92,64 @@ class CheckoutBusinessRulesTest(TestCase):
 		self.assertEqual(order_item.quantity, 1)
 
 	@override_settings(STRIPE_SECRET_KEY="", STRIPE_PUBLIC_KEY="")
-	def test_stock_decrements_after_valid_checkout(self):
-		initial_stock = self.product.stock
+	def test_stock_ne_decremente_pas_avant_paiement(self):
+		"""
+		Le stock ne doit PAS decrementer au moment du checkout.
+		Il decremente seulement apres confirmation Stripe (webhook).
+		"""
+		stock_initial = self.product.stock
 		items = json.dumps([{"id": self.product.id, "quantity": 2}])
 
 		response = self.client.post(
 			reverse("checkout"),
 			{
 				"nom": "Junior",
-				"email": "stock@test.com",
+				"email": "junior@test.com",
 				"address": "1 rue",
 				"ville": "Brest",
 				"pays": "France",
 				"zipcode": "29200",
 				"items": items,
 			},
+			follow=True,
 		)
 
-		self.assertEqual(response.status_code, 302)
+		self.assertEqual(response.status_code, 200)
 		self.product.refresh_from_db()
-		self.assertEqual(self.product.stock, initial_stock - 2)
+		self.assertEqual(
+			self.product.stock,
+			stock_initial,
+			"Le stock ne doit pas decrementer avant la confirmation du paiement Stripe",
+		)
+
+	@override_settings(STRIPE_SECRET_KEY="", STRIPE_PUBLIC_KEY="")
+	def test_commande_creee_avec_stock_deducted_false(self):
+		"""
+		Une commande creee sans paiement confirme doit avoir stock_deducted=False.
+		"""
+		items = json.dumps([{"id": self.product.id, "quantity": 1}])
+
+		response = self.client.post(
+			reverse("checkout"),
+			{
+				"nom": "Junior",
+				"email": "junior@test.com",
+				"address": "1 rue",
+				"ville": "Brest",
+				"pays": "France",
+				"zipcode": "29200",
+				"items": items,
+			},
+			follow=True,
+		)
+
+		self.assertEqual(response.status_code, 200)
+		commande = Commande.objects.filter(email="junior@test.com").order_by("-id").first()
+		self.assertIsNotNone(commande)
+		self.assertFalse(
+			commande.stock_deducted,
+			"stock_deducted doit etre False avant confirmation paiement",
+		)
 
 	@override_settings(STRIPE_SECRET_KEY="", STRIPE_PUBLIC_KEY="")
 	def test_insufficient_stock_blocks_order(self):

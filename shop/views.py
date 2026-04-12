@@ -179,9 +179,6 @@ def checkout(request):
                     "subtotal": str(sous_total),
                 })
 
-                product.stock -= quantity
-                product.save(update_fields=["stock"])
-
                 order_items_to_create.append(
                     OrderItem(
                         product=product,
@@ -296,18 +293,17 @@ def payment_cancel(request):
     if order_id and str(order_id).isdigit():
         commande = Commande.objects.filter(id=order_id).first()
         if commande and commande.payment_status in ['pending', 'processing']:
+            update_fields = ['payment_status']
             commande.payment_status = 'cancelled'
-            commande.save(update_fields=['payment_status'])
-            
-            # RÉINC RÉMENTER LE STOCK (URGENT)
-            try:
-                order_items = OrderItem.objects.filter(commande=commande)
+            if commande.stock_deducted:
+                order_items = OrderItem.objects.filter(commande=commande).select_related('product')
                 for item in order_items:
                     if item.product:
                         item.product.stock += item.quantity
                         item.product.save(update_fields=['stock'])
-            except Exception:
-                pass
+                commande.stock_deducted = False
+                update_fields.append('stock_deducted')
+            commande.save(update_fields=update_fields)
 
     messages.info(request, "Le paiement a été annulé. Vous pouvez réessayer.")
     return redirect('checkout')
@@ -346,6 +342,23 @@ def stripe_webhook(request):
 
             if commande:
                 sync_commande_payment_from_stripe(commande, session_id=session_id)
+
+                # Décrémenter le stock une seule fois, seulement après paiement confirmé.
+                with transaction.atomic():
+                    commande_locked = Commande.objects.select_for_update().filter(id=commande.id).first()
+                    if commande_locked and commande_locked.payment_status == 'paid' and not commande_locked.stock_deducted:
+                        order_items = list(OrderItem.objects.filter(commande=commande_locked).select_related('product'))
+                        for item in order_items:
+                            if not item.product:
+                                continue
+                            product = Product.objects.select_for_update().filter(id=item.product_id).first()
+                            if not product:
+                                continue
+                            product.stock = max(0, product.stock - item.quantity)
+                            product.save(update_fields=['stock'])
+
+                        commande_locked.stock_deducted = True
+                        commande_locked.save(update_fields=['stock_deducted'])
         except Exception as exc:
             logger.exception("Stripe checkout.session.completed processing failed: %s", exc)
             return HttpResponse(status=200)
@@ -355,8 +368,17 @@ def stripe_webhook(request):
         session_id = getattr(session, 'id', None)
         commande = Commande.objects.filter(stripe_checkout_session_id=session_id).first()
         if commande and commande.payment_status in ['pending', 'processing']:
+            update_fields = ['payment_status']
             commande.payment_status = 'cancelled'
-            commande.save(update_fields=['payment_status'])
+            if commande.stock_deducted:
+                order_items = OrderItem.objects.filter(commande=commande).select_related('product')
+                for item in order_items:
+                    if item.product:
+                        item.product.stock += item.quantity
+                        item.product.save(update_fields=['stock'])
+                commande.stock_deducted = False
+                update_fields.append('stock_deducted')
+            commande.save(update_fields=update_fields)
 
     return HttpResponse(status=200)
 
