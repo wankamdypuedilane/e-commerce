@@ -1,0 +1,25 @@
+# Correctif de placement du controleur Ingress.
+#
+# Le manifeste provider/kind d'ingress-nginx devrait contraindre le
+# controleur au noeud portant le label ingress-ready=true, seul noeud
+# dont les ports 80 et 443 sont mappes vers l'hote. Sur la version
+# installee, cette contrainte etait absente : le pod s'est retrouve sur
+# un worker, et le trafic arrivait sur un noeud ou personne n'ecoutait.
+#
+# A appliquer apres l'installation du controleur :
+#   kubectl apply -f k8s/07-ingress-controller-patch.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ingress-nginx-controller
+  namespace: ingress-nginx
+spec:
+  template:
+    spec:
+      nodeSelector:
+        kubernetes.io/os: linux
+        ingress-ready: "true"
+      tolerations:
+        - key: node-role.kubernetes.io/control-plane
+          operator: Equal
+          effect: NoSchedule

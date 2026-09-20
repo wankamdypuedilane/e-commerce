@@ -1,0 +1,36 @@
+# Autorite de certification locale.
+#
+# En production, cet Issuer auto-signe sera remplace par un
+# ClusterIssuer Let's Encrypt (voir l'issue sur le domaine
+# dilane-shop.store). La mecanique reste identique : seule
+# l'autorite qui signe change.
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: autorite-locale
+  namespace: dilane-shop
+spec:
+  selfSigned: {}
+
+---
+# Certificat demande a l'autorite locale.
+# cert-manager cree le Secret tls-dilane-shop, que l'Ingress consomme.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: dilane-shop-tls
+  namespace: dilane-shop
+spec:
+  secretName: tls-dilane-shop
+  duration: 2160h      # 90 jours, comme Let's Encrypt
+  renewBefore: 360h    # renouvellement 15 jours avant expiration
+  subject:
+    organizations:
+      - Dilane Shop
+  commonName: dilane-shop.local
+  dnsNames:
+    - dilane-shop.local
+  issuerRef:
+    name: autorite-locale
+    kind: Issuer
+    group: cert-manager.io
