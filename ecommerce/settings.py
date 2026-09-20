@@ -21,7 +21,7 @@ except ImportError:
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
-TEMPLATES_DIRS = os.path.join(BASE_DIR, 'Templates')
+TEMPLATES_DIRS = os.path.join(BASE_DIR, 'templates')
 load_dotenv(BASE_DIR / '.env')
 
 
@@ -198,5 +198,56 @@ STORAGES = {
     },
     "staticfiles": {
         "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
+    },
+}
+
+
+# Origines de confiance pour la protection CSRF.
+# Necessaire des lors que l'application est servie derriere un proxy
+# inverse ou un Ingress : Django compare l'en-tete Origin a cette liste.
+# Format attendu : schema inclus, separes par des virgules.
+# Exemple : https://boutique.exemple.fr,https://www.exemple.fr
+CSRF_TRUSTED_ORIGINS = [
+    origine.strip()
+    for origine in os.getenv('DJANGO_CSRF_TRUSTED_ORIGINS', '').split(',')
+    if origine.strip()
+]
+
+
+# Journalisation vers la sortie standard.
+# Dans un conteneur, les logs ne s'ecrivent pas dans des fichiers :
+# ils sont emis sur stdout et collectes par l'orchestrateur.
+LOG_LEVEL = os.getenv('DJANGO_LOG_LEVEL', 'INFO').upper()
+
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'standard': {
+            'format': '{levelname} {asctime} {name} {message}',
+            'style': '{',
+        },
+    },
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+            'formatter': 'standard',
+        },
+    },
+    'root': {
+        'handlers': ['console'],
+        'level': LOG_LEVEL,
+    },
+    'loggers': {
+        'django': {
+            'handlers': ['console'],
+            'level': LOG_LEVEL,
+            'propagate': False,
+        },
+        'shop': {
+            'handlers': ['console'],
+            'level': LOG_LEVEL,
+            'propagate': False,
+        },
     },
 }
