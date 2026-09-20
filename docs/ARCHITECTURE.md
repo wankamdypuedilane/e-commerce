@@ -384,14 +384,14 @@ graph TB
         SEC["Secrets : EC2_HOST, EC2_PORT,<br/>EC2_USER, EC2_PROJECT_PATH,<br/>EC2_SSH_KEY"]
     end
 
-    subgraph AWS["AWS — region eu-west-3 (defaut)"]
-        subgraph VPC["VPC par defaut / premier subnet"]
+    subgraph AWS["AWS — région eu-west-3 (défaut)"]
+        subgraph VPC["VPC par défaut / premier subnet"]
             SG["aws_security_group web<br/>ingress 22 depuis ssh_allowed_cidr<br/>ingress 80 et 443 depuis 0.0.0.0/0<br/>egress tout"]
             EIP["aws_eip<br/>Elastic IP"]
             subgraph EC2["aws_instance app — t3.micro, Ubuntu 24.04, gp3 8 Gio"]
                 NGX["Nginx<br/>listen 80 uniquement<br/>alias /static/ et /media/"]
                 GUN["Gunicorn — service systemd 'ecom'<br/>3 workers sync, bind 127.0.0.1:8000<br/>User=ubuntu, venv /home/ubuntu/e-commerce/Ecom"]
-                APP["Django — ecommerce.wsgi<br/>/home/ubuntu/e-commerce<br/>.env genere par bootstrap.sh, chmod 600"]
+                APP["Django — ecommerce.wsgi<br/>/home/ubuntu/e-commerce<br/>.env généré par bootstrap.sh, chmod 600"]
                 SQL["db.sqlite3 local<br/>(si database_url non postgres)"]
             end
         end
@@ -400,7 +400,7 @@ graph TB
     subgraph EXT["Services externes"]
         STRIPE["Stripe<br/>Checkout Session + Webhook"]
         BREVO["Brevo<br/>SMTP smtp-relay.brevo.com:587 TLS"]
-        PG["PostgreSQL<br/>hote externe decrit par database_url<br/>(non provisionne par ce Terraform)"]
+        PG["PostgreSQL<br/>hôte externe décrit par database_url<br/>(non provisionné par ce Terraform)"]
     end
 
     CLIENT["Navigateur client"]

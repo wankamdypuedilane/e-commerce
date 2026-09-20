@@ -275,24 +275,24 @@ Ce sont les écarts les plus structurants du projet : **le serveur créé par Te
 
 ```mermaid
 graph LR
-    subgraph BS["bootstrap.sh — ce qui est CREE"]
+    subgraph BS["bootstrap.sh — ce qui est CRÉÉ"]
         B1["/home/ubuntu/e-commerce"]
         B2["venv : Ecom/"]
         B3["service systemd : ecom"]
     end
     subgraph DP["deploy.yml — ce qui est ATTENDU"]
-        D1["EC2_PROJECT_PATH<br/>documente /home/ubuntu/ecommerce"]
+        D1["EC2_PROJECT_PATH<br/>documenté /home/ubuntu/ecommerce"]
         D2["venv : .venv/"]
         D3["service systemd : dilane-shop"]
     end
-    subgraph SC["scripts + docs — ce qui est SUPPOSE"]
+    subgraph SC["scripts + docs — ce qui est SUPPOSÉ"]
         S1["PROJECT_DIR<br/>/home/ubuntu/ecommerce"]
     end
 
-    B1 -. "chemins differents" .-> D1
+    B1 -. "chemins différents" .-> D1
     B2 -. "venv introuvable" .-> D2
     B3 -. "service inexistant" .-> D3
-    B1 -. "chemin different" .-> S1
+    B1 -. "chemin différent" .-> S1
 
     style B1 fill:#ffe0e0,stroke:#c00
     style B2 fill:#ffe0e0,stroke:#c00
