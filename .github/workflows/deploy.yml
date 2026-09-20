@@ -32,10 +32,18 @@ jobs:
       - name: Django tests
         run: python manage.py test
 
+      - name: Django deployment check
+        env:
+          DJANGO_SECRET_KEY: ci-only-not-a-real-secret
+          DJANGO_DEBUG: "False"
+          DJANGO_ALLOWED_HOSTS: example.com
+          DB_ENGINE: sqlite
+        run: python manage.py check --deploy --fail-level ERROR
+
   deploy:
     runs-on: ubuntu-latest
     needs: ci
-    if: github.ref == 'refs/heads/main'
+    if: false  # Desactive : instance EC2 supprimee. Remplace au Sprint 10 par un deploiement Kubernetes.
     steps:
       - name: Validate deploy secrets
         env:
