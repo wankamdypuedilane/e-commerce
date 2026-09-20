@@ -419,3 +419,22 @@ def deconnexion(request):
 def profil(request):
     commandes = Commande.objects.filter(user=request.user).prefetch_related('order_items__product').order_by('-date_commande')
     return render(request, 'shop/mes_commandes.html', {'commandes': commandes})
+
+def healthz(request):
+    """Point de sante pour les sondes Kubernetes.
+
+    Verifie que l'application repond et que la base de donnees est
+    joignable. Volontairement sans authentification et sans template :
+    la sonde doit pouvoir l'appeler avant que le pod ne recoive du
+    trafic, et la reponse doit rester triviale a produire.
+    """
+    from django.db import connection
+
+    try:
+        with connection.cursor() as curseur:
+            curseur.execute("SELECT 1")
+            curseur.fetchone()
+    except Exception:
+        return JsonResponse({"status": "degraded", "database": "unreachable"}, status=503)
+
+    return JsonResponse({"status": "ok", "database": "reachable"})

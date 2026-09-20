@@ -13,9 +13,11 @@ from shop.views import (
     deconnexion,
     profil,
     search_products,
+    healthz,
 )
 
 urlpatterns = [
+    path('healthz/', healthz, name='healthz'),
     path('api/produits/', search_products, name='search_products'),
     path('webhooks/stripe/', stripe_webhook, name='stripe_webhook'),
     path('', index, name='home'),

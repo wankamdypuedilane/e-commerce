@@ -39,7 +39,7 @@ spec:
     spec:
       containers:
         - name: django
-          image: dilane-shop:0.1.0
+          image: dilane-shop:0.2.0
           # L'image est chargee localement par kind, jamais telechargee
           imagePullPolicy: IfNotPresent
           ports:
@@ -50,6 +50,33 @@ spec:
                 name: dilane-shop-config
             - secretRef:
                 name: dilane-shop-secrets
+          # Le pod est-il pret a recevoir du trafic ?
+          # Un echec le retire du Service, sans le tuer.
+          readinessProbe:
+            httpGet:
+              path: /healthz/
+              port: 8000
+              httpHeaders:
+                - name: Host
+                  value: localhost
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            failureThreshold: 3
+
+          # Le pod est-il encore vivant ?
+          # Un echec le fait redemarrer. Seuils plus larges que la
+          # readiness : on ne tue pas un pod pour une lenteur passagere.
+          livenessProbe:
+            httpGet:
+              path: /healthz/
+              port: 8000
+              httpHeaders:
+                - name: Host
+                  value: localhost
+            initialDelaySeconds: 30
+            periodSeconds: 20
+            failureThreshold: 3
+
           resources:
             requests:
               memory: "256Mi"
