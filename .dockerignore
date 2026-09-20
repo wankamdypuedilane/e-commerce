@@ -1,0 +1,28 @@
+# Environnement Python local
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# Git
+.git/
+.gitignore
+
+# Secrets et bases locales
+.env
+*.sqlite3
+db.sqlite3
+
+# Fichiers generes
+staticfiles/
+media/
+
+# Outillage et documentation
+.vscode/
+docs/
+infra/
+scripts/
+README.md
+
+# Sauvegardes
+*.bak
