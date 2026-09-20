@@ -14,6 +14,7 @@ Ce projet a été construit pour aller au-delà d’une simple application web:
 - Image Docker multi-stage pour l’exécution
 - PostgreSQL en service séparé
 - Gunicorn et WhiteNoise pour servir l’application et ses fichiers statiques
+- Kubernetes pour l’orchestration : replicas, sondes de santé, mises à jour sans coupure
 - GitHub Actions pour la CI/CD
 
 ## Fonctionnalités
@@ -35,6 +36,8 @@ Ce projet a été construit pour aller au-delà d’une simple application web:
 - Django 6.0.3
 - PostgreSQL 17
 - Docker et Docker Compose
+- Kubernetes (kind en local, k3s visé en production)
+- ingress-nginx et cert-manager pour l’exposition HTTPS
 - Gunicorn (3 workers, timeout 60 s)
 - WhiteNoise pour les fichiers statiques
 - Stripe pour les paiements
@@ -187,13 +190,6 @@ kind n'a pas accès aux images du démon Docker local : elles doivent être copi
 ```bash
 docker build -t dilane-shop:0.2.0 .
 kind load docker-image dilane-shop:0.2.0 --name dilane-shop
-```
-
-`k8s/05-migration-job.yaml` référence encore l'étiquette `dilane-shop:0.1.0`. Tant que les deux manifestes ne sont pas alignés, cette étiquette doit être présente elle aussi :
-
-```bash
-docker build -t dilane-shop:0.1.0 .
-kind load docker-image dilane-shop:0.1.0 --name dilane-shop
 ```
 
 ### 3. Créer le namespace, le Secret et la configuration
