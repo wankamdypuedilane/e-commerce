@@ -5,6 +5,19 @@ Ce document constate. Il ne propose aucune correction.
 
 ---
 
+> **Note d'annotation — 20/09/2026, après les Sprints 9 et 10.**
+>
+> Ce document est une **photographie datée** : aucun de ses constats n'a été réécrit, y compris ceux qui ne sont plus vrais. Les numéros de ligne, les extraits de code et les chiffres cités décrivent le dépôt au commit `890a472`, avant la conteneurisation.
+>
+> Deux précisions utiles à la lecture :
+>
+> - L'historique Git a été réécrit à l'issue #13 pour en retirer `db.sqlite3`. **Le commit `890a472` n'existe plus** sous cet identifiant : il correspond à `ed22a22` dans l'historique actuel.
+> - Les sections 1 à 5 sont conservées telles quelles. Seule la **section 6** a reçu une colonne « Statut au 20/09/2026 (soir) », qui indique pour chaque dette si elle est résolue, par quelle issue, et ce qui a été vérifié. Les colonnes d'origine sont inchangées.
+>
+> Bilan : **11 dettes résolues sur 40**, 3 devenues sans objet avec l'arrêt du déploiement EC2, 26 toujours ouvertes. Aucune dette de criticité 2 portant sur le code applicatif n'a été traitée : les Sprints 9 et 10 ont porté sur l'infrastructure.
+
+---
+
 ## 1. Fonctionnalités réellement implémentées
 
 ### 1.1 Table des routes
@@ -370,60 +383,60 @@ Conséquences : le dépôt, le virtualenv, `staticfiles/`, `media/` et `db.sqlit
 
 ### Criticité 1 — Bloquant en production
 
-| # | Dette | Emplacement | Effet observable |
-|---|---|---|---|
-| 1.1 | Le déploiement CI/CD ne peut pas aboutir : venv `.venv` vs `Ecom`, service `dilane-shop` vs `ecom` | `deploy.yml:94,97` vs `bootstrap.sh:95,113` | Sous `set -e`, le job échoue ; le code livré n'est jamais chargé par Gunicorn |
-| 1.2 | `STRIPE_WEBHOOK_SECRET` jamais écrit par le bootstrap, et absent de `variables.tf` | `bootstrap.sh:44-53` | Le webhook répond 400 à Stripe. **Le stock n'est jamais décrémenté en production.** |
-| 1.3 | Fichiers du projet appartenant à `root`, service tournant en `ubuntu` | `bootstrap.sh` (aucun `chown` global) | Écriture impossible sur SQLite, `media/` et sur le dépôt lors du `git pull` |
-| 1.4 | `db.sqlite3` versionnée, contenant 2 comptes et 4 commandes réelles avec adresses | index git | Données personnelles et hachages de mots de passe dans l'historique ; base de dev devenant base de prod en mode SQLite |
-| 1.5 | `DEBUG` et `SECRET_KEY` avec des valeurs par défaut permissives | `settings.py:31,34` | Toute défaillance de chargement du `.env` ouvre l'application en mode debug avec une clé publique |
-| 1.6 | Aucun HTTPS configuré malgré le port 443 ouvert | `bootstrap.sh` (Nginx), `settings.py:40-45` | Identifiants et cookies de session en clair sur le réseau |
+| # | Dette | Emplacement | Effet observable | Statut au 20/09/2026 (soir) |
+|---|---|---|---|---|
+| 1.1 | Le déploiement CI/CD ne peut pas aboutir : venv `.venv` vs `Ecom`, service `dilane-shop` vs `ecom` | `deploy.yml:94,97` vs `bootstrap.sh:95,113` | Sous `set -e`, le job échoue ; le code livré n'est jamais chargé par Gunicorn | **Résolue** — #9, #10, #23. L'artefact déployé est une image : plus de virtualenv nommé, plus de service systemd, plus de script d'installation à synchroniser. Le job `deploy` est neutralisé par `if: false`. **Réserve :** aucun déploiement automatisé ne le remplace encore. |
+| 1.2 | `STRIPE_WEBHOOK_SECRET` jamais écrit par le bootstrap, et absent de `variables.tf` | `bootstrap.sh:44-53` | Le webhook répond 400 à Stripe. **Le stock n'est jamais décrémenté en production.** | **Résolue** — #12, #18. La variable figure dans `.env.example`, et le Secret `dilane-shop-secrets` porte bien les 8 clés dont `STRIPE_WEBHOOK_SECRET` (vérifié sur le cluster). Plus aucune liste de variables recopiée à la main. |
+| 1.3 | Fichiers du projet appartenant à `root`, service tournant en `ubuntu` | `bootstrap.sh` (aucun `chown` global) | Écriture impossible sur SQLite, `media/` et sur le dépôt lors du `git pull` | **Résolue** — #9. `COPY --chown=django:django . .` puis `USER django` dans le `Dockerfile`. Le processus et les fichiers ont le même propriétaire, fixé dans l'image. |
+| 1.4 | `db.sqlite3` versionnée, contenant 2 comptes et 4 commandes réelles avec adresses | index git | Données personnelles et hachages de mots de passe dans l'historique ; base de dev devenant base de prod en mode SQLite | **Résolue** — #13. `git ls-files` ne liste plus aucun `.sqlite3` et `git log --all -- db.sqlite3` ne retourne rien. `.gitignore` et `.dockerignore` excluent `*.sqlite3`. **Réserve :** le fichier existe toujours sur le poste, ignoré par git, et les données personnelles qu'il contient n'ont pas été purgées. |
+| 1.5 | `DEBUG` et `SECRET_KEY` avec des valeurs par défaut permissives | `settings.py:31,34` | Toute défaillance de chargement du `.env` ouvre l'application en mode debug avec une clé publique | **Résolue** — #12. `SECRET_KEY` n'a plus de repli : `settings.py:32-37` lève `ImproperlyConfigured`. `DEBUG` vaut `False` par défaut (`settings.py:40`). |
+| 1.6 | Aucun HTTPS configuré malgré le port 443 ouvert | `bootstrap.sh` (Nginx), `settings.py:40-45` | Identifiants et cookies de session en clair sur le réseau | **Résolue en local** — #21. Ingress nginx + cert-manager : HTTP répond 308 vers HTTPS, HTTPS répond 200. **Trois réserves.** Le certificat est auto-signé (Let's Encrypt ne peut pas valider `dilane-shop.local`), le site n'est exposé que sur le poste, et les réglages Django (`SECURE_SSL_REDIRECT`, `SESSION_COOKIE_SECURE`, `CSRF_COOKIE_SECURE`, HSTS) restent à `False`/`0` par défaut. **La localisation du constat était inexacte** : `settings.py:45-51` contenait déjà un bloc HTTPS piloté par variables d'environnement ; la dette portait sur l'infrastructure, pas sur l'application. |
 
 ### Criticité 2 — Sérieux
 
-| # | Dette | Emplacement | Effet observable |
-|---|---|---|---|
-| 2.1 | Aucune vérification de propriétaire sur `confirmation`, `payment_success`, `payment_cancel` | `views.py:238,265,291` | Lecture des commandes d'autrui ; `/confirmation` expose la dernière commande du site ; annulation d'une commande tierce en écriture |
-| 2.2 | Chemin de commande sans Stripe laissant des commandes orphelines | `views.py:230-231` | Commande en base, sans paiement, sans email, sans mouvement de stock |
-| 2.3 | Webhook Stripe totalement non testé | `shop/tests.py` | Le seul code qui touche au stock en production n'a aucun filet |
-| 2.4 | `services.py`, `backends.py`, `forms.py` sans aucun test | `shop/tests.py` | Stripe, TVA, emails et connexion par email non couverts |
-| 2.5 | Scripts de sauvegarde pointant sur un chemin inexistant | `scripts/*.sh:4,8` + `docs/ops-backup.md` | Le cron proposé échoue silencieusement : aucune sauvegarde |
-| 2.6 | Appel réseau Stripe à l'intérieur de `transaction.atomic()` avec `select_for_update` | `views.py:215-222` | Les lignes produit restent verrouillées pendant toute la latence de l'API Stripe ; un timeout Stripe remonte en erreur 500 |
-| 2.7 | Unicité d'email applicative sans contrainte en base | `forms.py:23-27`, `backends.py:20-23` | Doublons possibles ; le backend peut alors connecter au mauvais compte |
-| 2.8 | Secrets exposés via `user_data` et `terraform.tfstate` local | `main.tf:88-98`, `versions.tf` | Clés Stripe/Brevo/Django lisibles par l'API EC2 et stockées en clair sur le poste |
-| 2.9 | Aucun superutilisateur créé au bootstrap | `bootstrap.sh` | Admin inaccessible après un déploiement neuf |
-| 2.10 | `check --deploy` exécuté après le redémarrage, et absent de la CI | `deploy.yml:100` | Une configuration non conforme est mise en ligne avant d'être détectée |
+| # | Dette | Emplacement | Effet observable | Statut au 20/09/2026 (soir) |
+|---|---|---|---|---|
+| 2.1 | Aucune vérification de propriétaire sur `confirmation`, `payment_success`, `payment_cancel` | `views.py:238,265,291` | Lecture des commandes d'autrui ; `/confirmation` expose la dernière commande du site ; annulation d'une commande tierce en écriture | **Ouverte.** Vérifié : `views.py:240` fait toujours `Commande.objects.order_by('-id').first()`, `views.py:242` et `views.py:273` font `get_object_or_404` sans filtre `user`. Aucune issue ouverte. |
+| 2.2 | Chemin de commande sans Stripe laissant des commandes orphelines | `views.py:230-231` | Commande en base, sans paiement, sans email, sans mouvement de stock | **Ouverte.** Code inchangé. |
+| 2.3 | Webhook Stripe totalement non testé | `shop/tests.py` | Le seul code qui touche au stock en production n'a aucun filet | **Ouverte.** Toujours 9 tests en 4 classes. Sprint 11 annoncé sur les tests. |
+| 2.4 | `services.py`, `backends.py`, `forms.py` sans aucun test | `shop/tests.py` | Stripe, TVA, emails et connexion par email non couverts | **Ouverte.** Idem 2.3. |
+| 2.5 | Scripts de sauvegarde pointant sur un chemin inexistant | `scripts/*.sh:4,8` + `docs/ops-backup.md` | Le cron proposé échoue silencieusement : aucune sauvegarde | **Ouverte, contexte déplacé.** `docs/ops-backup.md` est marqué obsolète en tête de fichier et `scripts/` est devenu une archive (#29), mais **aucune sauvegarde n'existe** pour le volume `postgres_data` ni pour le PVC `donnees-postgres-0`. |
+| 2.6 | Appel réseau Stripe à l'intérieur de `transaction.atomic()` avec `select_for_update` | `views.py:215-222` | Les lignes produit restent verrouillées pendant toute la latence de l'API Stripe ; un timeout Stripe remonte en erreur 500 | **Ouverte.** Vérifié : `create_stripe_checkout_session` est toujours appelée à `views.py:215`, à l'intérieur du bloc `with transaction.atomic():` ouvert ligne 148. |
+| 2.7 | Unicité d'email applicative sans contrainte en base | `forms.py:23-27`, `backends.py:20-23` | Doublons possibles ; le backend peut alors connecter au mauvais compte | **Ouverte.** Aucune migration n'ajoute de contrainte ; `backends.py` conserve la branche `MultipleObjectsReturned`. |
+| 2.8 | Secrets exposés via `user_data` et `terraform.tfstate` local | `main.tf:88-98`, `versions.tf` | Clés Stripe/Brevo/Django lisibles par l'API EC2 et stockées en clair sur le poste | **Sans objet** — compte AWS fermé, `infra/terraform/` archivé, aucun `apply` possible. Le sujet se déplace : les secrets vivent désormais dans un Secret Kubernetes **encodé en base64, non chiffré** (voir `k8s/02-secrets.example.yaml` et l'[ADR-002](adr/002-kubernetes.md)). |
+| 2.9 | Aucun superutilisateur créé au bootstrap | `bootstrap.sh` | Admin inaccessible après un déploiement neuf | **Sans objet** — `bootstrap.sh` n'est plus exécuté. La création reste une étape manuelle (`createsuperuser`), documentée dans le README pour Docker Compose comme pour Kubernetes. Aucun automatisme. |
+| 2.10 | `check --deploy` exécuté après le redémarrage, et absent de la CI | `deploy.yml:100` | Une configuration non conforme est mise en ligne avant d'être détectée | **Résolue** — #23. `manage.py check --deploy --fail-level ERROR` est une étape du job `ci` (`deploy.yml:35-41`), exécutée avant tout déploiement. L'occurrence tardive subsiste dans le job `deploy`, lui-même neutralisé. |
 
 ### Criticité 3 — Modéré
 
-| # | Dette | Emplacement | Effet observable |
-|---|---|---|---|
-| 3.1 | `detail` utilise `Product.objects.get()` sans `get_object_or_404` | `views.py:96` | Une URL `/9999` lève `DoesNotExist` → erreur 500 au lieu d'un 404 |
-| 3.2 | Déconnexion acceptée en GET | `views.py:412`, `urls.py:54` | Déconnexion déclenchable depuis un site tiers |
-| 3.3 | `mark_safe` sur des titres de produits dans l'admin | `admin.py:33` | Injection HTML/JS stockée, visible par les autres administrateurs |
-| 3.4 | Énumération de comptes par timing | `backends.py:19-24` | Distinction entre email inscrit et inconnu |
-| 3.5 | Logique de panier dupliquée en JavaScript dans 3 templates | `index.html`, `detail.html`, `checkout.html` | Toute correction doit être répétée trois fois ; `index.html` fait 551 lignes |
-| 3.6 | 10 templates morts, dont 5 doublons `admin/` | `shop/templates/admin/`, `shop/templates/registration/`, `shop/templates/shop/profil.html` | Ambiguïté sur le fichier réellement rendu lors d'une modification |
-| 3.7 | 17 fichiers `.pyc` versionnés | `*/__pycache__/` | Bruit dans les diffs, bytecode obsolète distribué |
-| 3.8 | `payment_status='failed'` jamais écrit ; `shipped`/`delivered` sans logique | `models.py:49-55` | Machine à états incomplète ; échecs de paiement invisibles |
-| 3.9 | `render_checkout_error` ne réaffiche pas les données saisies | `views.py:35-39` | Le client doit ressaisir tout le formulaire en cas d'erreur de stock |
-| 3.10 | Champs `ville`, `pays`, `zipcode` obligatoires au modèle mais non validés par la vue | `views.py:112` vs `models.py:64-66` | Commandes enregistrables avec une adresse de livraison incomplète |
-| 3.11 | Instruction cassée : `cp terraform.tfvars.example` | `infra/terraform/README.md:23` | Fichier supprimé au commit `e75041d` |
-| 3.12 | Page de confirmation titrée « Commande Confirmée ! » quelle que soit l'issue | `confirmation.html:12` | Affichage contradictoire avec le bandeau « Paiement annulé » juste en dessous |
+| # | Dette | Emplacement | Effet observable | Statut au 20/09/2026 (soir) |
+|---|---|---|---|---|
+| 3.1 | `detail` utilise `Product.objects.get()` sans `get_object_or_404` | `views.py:96` | Une URL `/9999` lève `DoesNotExist` → erreur 500 au lieu d'un 404 | **Ouverte.** Vérifié : `views.py:96` inchangé. |
+| 3.2 | Déconnexion acceptée en GET | `views.py:412`, `urls.py:54` | Déconnexion déclenchable depuis un site tiers | **Ouverte.** La vue `deconnexion` (`views.py:412`) n'a aucun décorateur de méthode ; la route est déclarée `urls.py:56`. |
+| 3.3 | `mark_safe` sur des titres de produits dans l'admin | `admin.py:33` | Injection HTML/JS stockée, visible par les autres administrateurs | **Ouverte.** `admin.py:33` inchangé. |
+| 3.4 | Énumération de comptes par timing | `backends.py:19-24` | Distinction entre email inscrit et inconnu | **Ouverte.** `backends.py` inchangé. |
+| 3.5 | Logique de panier dupliquée en JavaScript dans 3 templates | `index.html`, `detail.html`, `checkout.html` | Toute correction doit être répétée trois fois ; `index.html` fait 551 lignes | **Ouverte.** Aucun template métier n'a été modifié depuis l'audit. |
+| 3.6 | 10 templates morts, dont 5 doublons `admin/` | `shop/templates/admin/`, `shop/templates/registration/`, `shop/templates/shop/profil.html` | Ambiguïté sur le fichier réellement rendu lors d'une modification | **Ouverte.** Le renommage `Templates/` → `templates/` (#27) n'a supprimé aucun template : les 5 doublons `admin/` et les 4 `registration/` inertes subsistent, ainsi que `shop/profil.html`. |
+| 3.7 | 17 fichiers `.pyc` versionnés | `*/__pycache__/` | Bruit dans les diffs, bytecode obsolète distribué | **Résolue** — #25. `git ls-files` ne liste plus aucun fichier `.pyc`. `.gitignore` et `.dockerignore` excluent `__pycache__/`. |
+| 3.8 | `payment_status='failed'` jamais écrit ; `shipped`/`delivered` sans logique | `models.py:49-55` | Machine à états incomplète ; échecs de paiement invisibles | **Ouverte.** `models.py` inchangé. |
+| 3.9 | `render_checkout_error` ne réaffiche pas les données saisies | `views.py:35-39` | Le client doit ressaisir tout le formulaire en cas d'erreur de stock | **Ouverte.** Vérifié : le contexte ne contient toujours que `error` et `tax_rate_percent`. |
+| 3.10 | Champs `ville`, `pays`, `zipcode` obligatoires au modèle mais non validés par la vue | `views.py:112` vs `models.py:64-66` | Commandes enregistrables avec une adresse de livraison incomplète | **Ouverte.** Vérifié : `views.py:112` ne teste que `nom`, `email` et `address`. |
+| 3.11 | Instruction cassée : `cp terraform.tfvars.example` | `infra/terraform/README.md:23` | Fichier supprimé au commit `e75041d` | **Ouverte, sur un répertoire archivé.** La ligne 23 est inchangée ; `infra/terraform/` n'est plus une chaîne de déploiement active. |
+| 3.12 | Page de confirmation titrée « Commande Confirmée ! » quelle que soit l'issue | `confirmation.html:12` | Affichage contradictoire avec le bandeau « Paiement annulé » juste en dessous | **Ouverte.** Template inchangé. |
 
 ### Criticité 4 — Mineur
 
-| # | Dette | Emplacement |
-|---|---|---|
-| 4.1 | `ecommerce/asgi.py` inutilisé | `ecommerce/asgi.py` |
-| 4.2 | Champ `total` soumis mais jamais lu côté serveur | `checkout.html:126-133` |
-| 4.3 | `inlines = []` écrasé trois lignes plus bas | `admin.py:23` et `47` |
-| 4.4 | `Product.image` (URL legacy) coexistant avec `image_file` | `models.py:22-23` |
-| 4.5 | Aucune configuration `LOGGING` explicite | `settings.py` |
-| 4.6 | Aucun `CSRF_TRUSTED_ORIGINS` malgré le proxy inverse | `settings.py` |
-| 4.7 | Aucune dépendance de développement (ni linter, ni `coverage`) | `requirements.txt` |
-| 4.8 | Répertoire `Templates/` avec une majuscule, à côté de `shop/templates/` | `settings.py:23` |
-| 4.9 | `/api/produits/` sans limitation de débit | `views.py:68` |
-| 4.10 | Migrations de données non réversibles (reverse no-op) | migrations `0008` et `0014` |
-| 4.11 | `ShopConfig` sans `default_auto_field` ni `verbose_name` | `shop/apps.py` |
-| 4.12 | Port SSH configurable côté CI mais figé à 22 dans le security group | `deploy.yml:71` vs `main.tf:46-52` |
+| # | Dette | Emplacement | Statut au 20/09/2026 (soir) |
+|---|---|---|---|
+| 4.1 | `ecommerce/asgi.py` inutilisé | `ecommerce/asgi.py` | **Ouverte.** Fichier toujours présent ; le `CMD` de l'image lance `ecommerce.wsgi:application`. |
+| 4.2 | Champ `total` soumis mais jamais lu côté serveur | `checkout.html:126-133` | **Ouverte.** `name="total"` toujours présent (`checkout.html:132`). |
+| 4.3 | `inlines = []` écrasé trois lignes plus bas | `admin.py:23` et `47` | **Ouverte.** Inchangé. |
+| 4.4 | `Product.image` (URL legacy) coexistant avec `image_file` | `models.py:22-23` | **Ouverte.** Inchangé. Le Sprint 9 note que trancher suppose de décider où sont stockées les images — volume partagé ou stockage objet. Le volume `media_files` n'est répliqué ni entre machines, ni entre pods. |
+| 4.5 | Aucune configuration `LOGGING` explicite | `settings.py` | **Résolue** — #26. `LOGGING` défini (`settings.py:222-253`) : handler console, niveau piloté par `DJANGO_LOG_LEVEL`, loggers `django` et `shop`. |
+| 4.6 | Aucun `CSRF_TRUSTED_ORIGINS` malgré le proxy inverse | `settings.py` | **Résolue** — #26. `CSRF_TRUSTED_ORIGINS` construit depuis `DJANGO_CSRF_TRUSTED_ORIGINS` (`settings.py:210-214`). **Réserve :** la liste est vide par défaut et n'est renseignée ni dans `k8s/01-configmap.yaml`, ni sur le cluster. |
+| 4.7 | Aucune dépendance de développement (ni linter, ni `coverage`) | `requirements.txt` | **Ouverte.** `requirements.txt` compte 7 paquets, tous d'exécution (`whitenoise` ajouté au Sprint 9). Aucun `requirements-dev.txt`. |
+| 4.8 | Répertoire `Templates/` avec une majuscule, à côté de `shop/templates/` | `settings.py:23` | **Résolue** — #27. Répertoire renommé `templates/` ; `settings.py:24` pointe sur `os.path.join(BASE_DIR, 'templates')`. La précédence `DIRS` > `APP_DIRS` est inchangée, donc les doublons de 3.6 subsistent. |
+| 4.9 | `/api/produits/` sans limitation de débit | `views.py:68` | **Ouverte.** Inchangé. |
+| 4.10 | Migrations de données non réversibles (reverse no-op) | migrations `0008` et `0014` | **Ouverte.** Vérifié : `0008:67` (`reverse_noop`) et `0014:31` (`migrations.RunPython.noop`). |
+| 4.11 | `ShopConfig` sans `default_auto_field` ni `verbose_name` | `shop/apps.py` | **Ouverte.** `shop/apps.py` ne déclare que `name = 'shop'`. |
+| 4.12 | Port SSH configurable côté CI mais figé à 22 dans le security group | `deploy.yml:71` vs `main.tf:46-52` | **Sans objet** — le job `deploy` est neutralisé, l'instance EC2 supprimée et le security group n'existe plus. |
