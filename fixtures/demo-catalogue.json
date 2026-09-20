@@ -1,0 +1,367 @@
+[
+{
+  "model": "shop.category",
+  "pk": 2,
+  "fields": {
+    "name": "Électronique",
+    "date_added": "2026-04-05T12:50:34.822Z"
+  }
+},
+{
+  "model": "shop.category",
+  "pk": 3,
+  "fields": {
+    "name": "Accessoires",
+    "date_added": "2026-04-05T12:51:05.173Z"
+  }
+},
+{
+  "model": "shop.category",
+  "pk": 4,
+  "fields": {
+    "name": "Photographie",
+    "date_added": "2026-04-05T12:51:16.991Z"
+  }
+},
+{
+  "model": "shop.category",
+  "pk": 5,
+  "fields": {
+    "name": "Mode",
+    "date_added": "2026-04-05T12:51:28.943Z"
+  }
+},
+{
+  "model": "shop.category",
+  "pk": 6,
+  "fields": {
+    "name": "Maison",
+    "date_added": "2026-04-05T12:51:40.932Z"
+  }
+},
+{
+  "model": "shop.product",
+  "pk": 3,
+  "fields": {
+    "title": "Casque Audio Premium",
+    "price": "199.99",
+    "description": "Plongez dans une bulle sonore avec ce casque à réduction de bruit active de pointe. Doté de haut-parleurs de 40mm, il offre des basses profondes et des aigus cristallins. Sa batterie longue durée assure 30 heures d'écoute continue, tandis que ses coussinets en mousse à mémoire de forme garantissent un confort exceptionnel pour vos longs trajets ou vos sessions de travail.",
+    "category": 2,
+    "image": "https://images.unsplash.com/photo-1505740420928-5e560c06d30e?q=80&w=720&h=720&auto=format&fit=crop",
+    "image_file": "",
+    "stock": 0
+  }
+},
+{
+  "model": "shop.product",
+  "pk": 4,
+  "fields": {
+    "title": "Enceinte Bluetooth Nomade",
+    "price": "85.00",
+    "description": "L'enceinte idéale pour vos aventures en extérieur. Certifiée IPX7, elle résiste à l'eau et à la poussière. Son autonomie de 15 heures et sa puissance sonore à 360 degrés permettent d'ambiancer n'importe quel espace. Elle intègre également un microphone pour passer vos appels en mains libres avec une clarté parfaite.",
+    "category": 2,
+    "image": "https://images.unsplash.com/photo-1589003077984-894e133dabab?q=80&w=720&h=720&auto=format&fit=crop",
+    "image_file": "",
+    "stock": 1
+  }
+},
+{
+  "model": "shop.product",
+  "pk": 5,
+  "fields": {
+    "title": "Clavier Mécanique RGB",
+    "price": "129.90",
+    "description": "Conçu pour la performance et la durabilité, ce clavier mécanique utilise des switchs réactifs offrant un retour tactile précis. Personnalisez votre setup avec des millions de couleurs grâce au rétroéclairage RGB touche par touche. Son châssis en aluminium brossé assure une stabilité parfaite même lors des sessions de jeu les plus intenses.",
+    "category": 2,
+    "image": "https://images.unsplash.com/photo-1511467687858-23d96c32e4ae?q=80&w=720&h=720&auto=format&fit=crop",
+    "image_file": "",
+    "stock": 1
+  }
+},
+{
+  "model": "shop.product",
+  "pk": 6,
+  "fields": {
+    "title": "Souris Ergonomique Sans Fil",
+    "price": "49.00",
+    "description": "Précision laser et design conçu pour réduire la fatigue du poignet.",
+    "category": 2,
+    "image": "https://images.unsplash.com/photo-1527864550417-7fd91fc51a46?q=80&w=720&h=720&auto=format&fit=crop",
+    "image_file": "",
+    "stock": 0
+  }
+},
+{
+  "model": "shop.product",
+  "pk": 7,
+  "fields": {
+    "title": "Écouteurs True Wireless",
+    "price": "150.00",
+    "description": "La liberté totale sans aucun fil. Ces écouteurs intra-auriculaires offrent une connexion Bluetooth 5.2 stable et une latence réduite. Le boîtier de charge compact fournit 4 recharges complètes, portant l'autonomie totale à 24 heures. Ils sont livrés avec plusieurs tailles d'embouts pour s'adapter à toutes les morphologies d'oreilles.",
+    "category": 2,
+    "image": "https://images.unsplash.com/photo-1590658268037-6bf12165a8df?q=80&w=720&h=720&auto=format&fit=crop",
+    "image_file": "",
+    "stock": 0
+  }
+},
+{
+  "model": "shop.product",
+  "pk": 8,
+  "fields": {
+    "title": "Montre Connectée Sport",
+    "price": "125.50",
+    "description": "Votre coach personnel au poignet. Suivez plus de 50 activités sportives différentes, analysez votre sommeil et surveillez votre fréquence cardiaque en temps réel. Son écran AMOLED haute résolution reste lisible même en plein soleil, et son bracelet en silicone hypoallergénique est conçu pour être porté jour et nuit.",
+    "category": 3,
+    "image": "https://images.unsplash.com/photo-1523275335684-37898b6baf30?q=80&w=720&h=720&auto=format&fit=crop",
+    "image_file": "",
+    "stock": 0
+  }
+},
+{
+  "model": "shop.product",
+  "pk": 9,
+  "fields": {
+    "title": "Lunettes de Soleil Polarisées",
+    "price": "75.00",
+    "description": "Alliez style et protection avec ces lunettes au design intemporel. Les verres polarisés bloquent 100% des rayons UV nocifs et réduisent l'éblouissement sur l'eau ou la route. La monture faite à la main en acétate est à la fois légère et extrêmement résistante aux chocs quotidiens.",
+    "category": 3,
+    "image": "https://images.unsplash.com/photo-1572635196237-14b3f281503f?q=80&w=720&h=720&auto=format&fit=crop",
+    "image_file": "",
+    "stock": 5
+  }
+},
+{
+  "model": "shop.product",
+  "pk": 10,
+  "fields": {
+    "title": "Portefeuille en Cuir",
+    "price": "45.00",
+    "description": "L'élégance classique associée à la sécurité moderne. Ce portefeuille en cuir véritable pleine fleur dispose de nombreux compartiments pour vos billets et cartes. Il intègre une doublure anti-RFID pour protéger vos données bancaires contre le piratage à distance. Un accessoire qui se bonifie avec le temps.",
+    "category": 3,
+    "image": "https://images.unsplash.com/photo-1627123424574-724758594e93?q=80&w=720&h=720&auto=format&fit=crop",
+    "image_file": "",
+    "stock": 0
+  }
+},
+{
+  "model": "shop.product",
+  "pk": 11,
+  "fields": {
+    "title": "Gourde Isotherme Inox",
+    "price": "29.99",
+    "description": "Dites adieu au plastique à usage unique. Cette gourde en acier inoxydable double paroi maintient vos boissons froides pendant 24 heures et chaudes pendant 12 heures. Son bouchon hermétique garantit zéro fuite dans votre sac, et son revêtement extérieur offre une prise en main antidérapante.",
+    "category": 3,
+    "image": "https://images.unsplash.com/photo-1523362628745-0c100150b504?q=80&w=720&h=720&auto=format&fit=crop",
+    "image_file": "",
+    "stock": 5
+  }
+},
+{
+  "model": "shop.product",
+  "pk": 12,
+  "fields": {
+    "title": "Étui pour Tablette",
+    "price": "39.00",
+    "description": "Une protection à 360 degrés pour votre tablette. Cet étui intelligent s'allume et s'éteint automatiquement à l'ouverture. Il se transforme en support multi-angles, parfait pour écrire, dessiner ou regarder vos séries préférées. Sa finition en microfibre douce protège votre écran des rayures et des traces de doigts.",
+    "category": 3,
+    "image": "https://images.unsplash.com/photo-1544244015-0df4b3ffc6b0?q=80&w=720&h=720&auto=format&fit=crop",
+    "image_file": "",
+    "stock": 0
+  }
+},
+{
+  "model": "shop.product",
+  "pk": 13,
+  "fields": {
+    "title": "Lampe de Bureau LED",
+    "price": "34.00",
+    "description": "Optimisez votre espace de travail avec cette lampe intelligente. Elle propose 3 modes de couleur (chaud, neutre, froid) et 5 niveaux de luminosité pour s'adapter à votre activité. Son bras articulé permet d'orienter la lumière précisément, et son socle intègre un port USB pour recharger vos appareils mobiles facilement.",
+    "category": 6,
+    "image": "https://images.unsplash.com/photo-1534073828943-f801091bb18c?q=80&w=720&h=720&auto=format&fit=crop",
+    "image_file": "",
+    "stock": 5
+  }
+},
+{
+  "model": "shop.product",
+  "pk": 14,
+  "fields": {
+    "title": "Plante Artificielle Premium",
+    "price": "22.50",
+    "description": "Apportez une touche de nature à votre intérieur sans aucune contrainte d'entretien. Cette plante artificielle ultra-réaliste imite parfaitement le feuillage naturel. Livrée dans un pot en céramique design, elle est idéale pour les pièces peu éclairées ou pour ceux qui n'ont pas la main verte.",
+    "category": 6,
+    "image": "https://images.unsplash.com/photo-1485955900006-10f4d324d411?q=80&w=720&h=720&auto=format&fit=crop",
+    "image_file": "",
+    "stock": 0
+  }
+},
+{
+  "model": "shop.product",
+  "pk": 15,
+  "fields": {
+    "title": "Bougie Parfumée Vanille",
+    "price": "18.00",
+    "description": "Créez une atmosphère chaleureuse et apaisante dans votre salon. Fabriquée à partir de cire de soja 100% naturelle et de mèches en coton, cette bougie assure une combustion propre pendant 40 heures. Son parfum délicat de vanille bourbon est à la fois réconfortant et élégant.",
+    "category": 6,
+    "image": "https://images.unsplash.com/photo-1603006905003-be475563bc59?q=80&w=720&h=720&auto=format&fit=crop",
+    "image_file": "",
+    "stock": 0
+  }
+},
+{
+  "model": "shop.product",
+  "pk": 16,
+  "fields": {
+    "title": "Coussin de Velours",
+    "price": "25.00",
+    "description": "Ajoutez du confort et une note luxueuse à votre canapé. Ce coussin en velours de haute qualité offre un toucher d'une douceur incomparable. Le garnissage généreux garde sa forme au fil du temps. La housse est amovible grâce à une fermeture éclair invisible pour un entretien facile en machine.",
+    "category": 6,
+    "image": "https://images.unsplash.com/photo-1584132967334-10e028bd69f7?q=80&w=720&h=720&auto=format&fit=crop",
+    "image_file": "",
+    "stock": 1
+  }
+},
+{
+  "model": "shop.product",
+  "pk": 17,
+  "fields": {
+    "title": "Miroir Mural Rond",
+    "price": "65.00",
+    "description": "Un miroir au design minimaliste qui agrandit visuellement votre pièce. Son cadre fin en métal noir mat s'intègre parfaitement dans les décors modernes ou scandinaves. Le verre haute définition offre un reflet sans distorsion. Facile à installer grâce au support de fixation robuste inclus au dos.",
+    "category": 6,
+    "image": "https://images.unsplash.com/photo-1618220179428-22790b461013?q=80&w=720&h=720&auto=format&fit=crop",
+    "image_file": "",
+    "stock": 5
+  }
+},
+{
+  "model": "shop.product",
+  "pk": 18,
+  "fields": {
+    "title": "Sac à Dos Urbain",
+    "price": "59.90",
+    "description": "Le sac à dos polyvalent pour la ville. Il dispose d'un compartiment rembourré pour ordinateur portable 15,6 pouces et de multiples poches organisatrices pour vos accessoires. Fabriqué en tissu recyclé résistant à l'eau, il allie durabilité écologique et style contemporain avec ses finitions soignées.",
+    "category": 5,
+    "image": "https://images.unsplash.com/photo-1553062407-98eeb64c6a62?q=80&w=720&h=720&auto=format&fit=crop",
+    "image_file": "",
+    "stock": 0
+  }
+},
+{
+  "model": "shop.product",
+  "pk": 19,
+  "fields": {
+    "title": "Baskets Blanches Classiques",
+    "price": "89.00",
+    "description": "Un indispensable de toute garde-robe. Ces baskets basses en cuir synthétique premium offrent un look épuré qui se marie avec tout, du jean au costume. La semelle intérieure à mémoire de forme et la semelle extérieure en caoutchouc antidérapant assurent un confort de marche optimal tout au long de la journée.",
+    "category": 5,
+    "image": "https://images.unsplash.com/photo-1549298916-b41d501d3772?q=80&w=720&h=720&auto=format&fit=crop",
+    "image_file": "",
+    "stock": 0
+  }
+},
+{
+  "model": "shop.product",
+  "pk": 20,
+  "fields": {
+    "title": "Veste en Jean",
+    "price": "69.00",
+    "description": "La pièce iconique qui ne se démode jamais. Fabriquée dans un denim de coton robuste, cette veste propose une coupe ajustée moderne. Elle présente des boutons en métal gravés, des poches poitrine pratiques et des coutures renforcées pour une longévité maximale. Elle se patinera magnifiquement avec le temps.",
+    "category": 5,
+    "image": "https://images.unsplash.com/photo-1576995853123-5a10305d93c0?q=80&w=720&h=720&auto=format&fit=crop",
+    "image_file": "",
+    "stock": 0
+  }
+},
+{
+  "model": "shop.product",
+  "pk": 21,
+  "fields": {
+    "title": "T-shirt en Coton Bio",
+    "price": "25.00",
+    "description": "L'essentiel respectueux de l'environnement. Ce t-shirt est confectionné en coton 100% biologique certifié, sans pesticides ni produits chimiques. Sa maille fine est à la fois douce, respirante et résistante aux lavages répétés. Sa coupe droite classique convient à toutes les morphologies.",
+    "category": 5,
+    "image": "https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?q=80&w=720&h=720&auto=format&fit=crop",
+    "image_file": "",
+    "stock": 0
+  }
+},
+{
+  "model": "shop.product",
+  "pk": 22,
+  "fields": {
+    "title": "Écharpe en Cachemire",
+    "price": "45.00",
+    "description": "Un luxe abordable pour affronter le froid. Cette écharpe est tissée dans un mélange de cachemire et de laine mérinos, offrant une chaleur exceptionnelle sans le poids. Sa texture délicate ne gratte pas et apporte une touche d'élégance à n'importe quel manteau. Disponible en plusieurs coloris sobres.",
+    "category": 5,
+    "image": "https://images.unsplash.com/photo-1520903920243-00d872a2d1c9?q=80&w=720&h=720&auto=format&fit=crop",
+    "image_file": "",
+    "stock": 0
+  }
+},
+{
+  "model": "shop.product",
+  "pk": 23,
+  "fields": {
+    "title": "Appareil Photo Vintage",
+    "price": "450.00",
+    "description": "Redécouvrez le plaisir de la photographie authentique avec cet appareil au design rétro inspiré des années 70. Sous son boîtier en alliage de magnésium se cache un capteur CMOS moderne de 24 mégapixels capable de capturer des détails époustouflants. Il offre une expérience tactile unique avec ses molettes manuelles tout en intégrant le Wi-Fi.",
+    "category": 4,
+    "image": "https://images.unsplash.com/photo-1516035069371-29a1b244cc32?q=80&w=720&h=720&auto=format&fit=crop",
+    "image_file": "",
+    "stock": 3
+  }
+},
+{
+  "model": "shop.product",
+  "pk": 24,
+  "fields": {
+    "title": "Trépied Professionnel",
+    "price": "115.00",
+    "description": "Le compagnon indispensable pour vos poses longues. Conçu en aluminium aéronautique ultra-léger, ce trépied combine robustesse et portabilité. Sa rotule multidirectionnelle à 360° permet un cadrage précis, tandis que ses pieds télescopiques assurent une stabilité parfaite sur tous les terrains.",
+    "category": 4,
+    "image": "https://images.unsplash.com/photo-1495707902641-75cac588d2e9?q=80&w=720&h=720&auto=format&fit=crop",
+    "image_file": "",
+    "stock": 0
+  }
+},
+{
+  "model": "shop.product",
+  "pk": 25,
+  "fields": {
+    "title": "Objectif 50mm f/1.8",
+    "price": "199.00",
+    "description": "Surnommé le 'Nifty Fifty', cet objectif est un incontournable. Sa grande ouverture de f/1.8 permet de capturer des images lumineuses même en basse lumière et de créer un bokeh artistique magnifique. Idéal pour les portraits avec un piqué exceptionnel du centre jusqu'aux bords.",
+    "category": 4,
+    "image": "https://placehold.co/720x720?text=Objectif+50mm",
+    "image_file": "",
+    "stock": 0
+  }
+},
+{
+  "model": "shop.product",
+  "pk": 26,
+  "fields": {
+    "title": "Sac à Appareil Photo",
+    "price": "79.00",
+    "description": "Protégez votre équipement avec style. Ce sac à dos ergonomique possède des compartiments modulables et rembourrés pour votre boîtier et vos objectifs. Fabriqué en tissu déperlant haute résistance, il comprend également une housse de pluie intégrée et un espace pour ordinateur 13 pouces.",
+    "category": 4,
+    "image": "https://images.unsplash.com/photo-1510127034890-ba27508e9f1c?q=80&w=720&h=720&auto=format&fit=crop",
+    "image_file": "",
+    "stock": 0
+  }
+},
+{
+  "model": "shop.product",
+  "pk": 27,
+  "fields": {
+    "title": "Flash Externe Cobra",
+    "price": "140.00",
+    "description": "Prenez le contrôle total de votre éclairage. Doté d'un nombre guide élevé, ce flash supporte la synchronisation haute vitesse (HSS) et le mode TTL. Sa tête pivotante permet de diffuser la lumière indirectement pour un rendu naturel. Parfait pour le studio ou l'événementiel.",
+    "category": 4,
+    "image": "https://placehold.co/720x720?text=Flash+Externe",
+    "image_file": "",
+    "stock": 5
+  }
+}
+]
