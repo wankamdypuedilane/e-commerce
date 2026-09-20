@@ -20,7 +20,7 @@ spec:
       restartPolicy: Never
       containers:
         - name: migrate
-          image: dilane-shop:0.1.0
+          image: dilane-shop:0.2.0
           imagePullPolicy: IfNotPresent
           command: ["python", "manage.py", "migrate", "--noinput"]
           envFrom:

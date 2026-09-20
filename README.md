@@ -152,6 +152,173 @@ docker compose down
 docker compose exec web python manage.py test
 ```
 
+## Déploiement Kubernetes (local, kind)
+
+Les manifestes du répertoire [k8s/](k8s/) déploient la même image que Docker Compose sur un cluster Kubernetes. Le cluster de référence est un cluster local [kind](https://kind.sigs.k8s.io/) à trois nœuds. Le choix de Kubernetes et ses contreparties sont documentés dans [docs/adr/002-kubernetes.md](docs/adr/002-kubernetes.md).
+
+### Prérequis
+
+- Docker Engine (kind exécute les nœuds du cluster comme des conteneurs)
+- `kubectl` — version utilisée : v1.37.0
+- `kind` — version utilisée : v0.33.0
+
+```bash
+kubectl version --client
+kind version
+```
+
+### 1. Créer le cluster
+
+```bash
+kind create cluster --config k8s/kind-cluster.yaml
+```
+
+Le cluster s'appelle `dilane-shop` et compte un nœud de contrôle — qui porte le label `ingress-ready=true` et expose les ports 80 et 443 vers la machine hôte — et deux nœuds de travail.
+
+```bash
+kubectl cluster-info --context kind-dilane-shop
+kubectl get nodes
+```
+
+### 2. Construire l'image et la charger dans le cluster
+
+kind n'a pas accès aux images du démon Docker local : elles doivent être copiées explicitement dans les nœuds. Aucune image n'est téléchargée depuis un registre (`imagePullPolicy: IfNotPresent`).
+
+```bash
+docker build -t dilane-shop:0.2.0 .
+kind load docker-image dilane-shop:0.2.0 --name dilane-shop
+```
+
+`k8s/05-migration-job.yaml` référence encore l'étiquette `dilane-shop:0.1.0`. Tant que les deux manifestes ne sont pas alignés, cette étiquette doit être présente elle aussi :
+
+```bash
+docker build -t dilane-shop:0.1.0 .
+kind load docker-image dilane-shop:0.1.0 --name dilane-shop
+```
+
+### 3. Créer le namespace, le Secret et la configuration
+
+Le Secret n'est jamais versionné : seul le modèle commenté [k8s/02-secrets.example.yaml](k8s/02-secrets.example.yaml) l'est. Créez-le avec `kubectl`, après le namespace et avant tout le reste — PostgreSQL comme Django y lisent leurs variables au démarrage.
+
+```bash
+kubectl apply -f k8s/00-namespace.yaml
+
+kubectl create secret generic dilane-shop-secrets \
+  --namespace dilane-shop \
+  --from-literal=DJANGO_SECRET_KEY="$(python3 -c 'import secrets; print(secrets.token_urlsafe(50))')" \
+  --from-literal=DB_PASSWORD="..." \
+  --from-literal=STRIPE_PUBLIC_KEY="pk_test_..." \
+  --from-literal=STRIPE_SECRET_KEY="sk_test_..." \
+  --from-literal=STRIPE_WEBHOOK_SECRET="whsec_..." \
+  --from-literal=BREVO_SMTP_LOGIN="..." \
+  --from-literal=BREVO_SMTP_KEY="..." \
+  --from-literal=EMAIL_FROM="..."
+
+kubectl apply -f k8s/01-configmap.yaml
+```
+
+Un Secret Kubernetes est **encodé en base64, pas chiffré**. Quiconque peut lire les Secrets du namespace peut lire les valeurs en clair. Voir la conséquence correspondante dans [docs/adr/002-kubernetes.md](docs/adr/002-kubernetes.md).
+
+### 4. Appliquer les manifestes applicatifs, dans l'ordre
+
+L'ordre compte : la base doit répondre avant les migrations, et les migrations doivent être passées avant que les pods Django ne servent du trafic.
+
+```bash
+kubectl apply -f k8s/03-postgres.yaml
+kubectl wait --namespace dilane-shop \
+  --for=condition=ready pod -l app.kubernetes.io/name=postgres --timeout=180s
+
+kubectl apply -f k8s/05-migration-job.yaml
+kubectl wait --namespace dilane-shop \
+  --for=condition=complete job/django-migrate --timeout=180s
+
+kubectl apply -f k8s/04-django.yaml
+```
+
+**Les migrations passent par le Job `k8s/05-migration-job.yaml`, pas au démarrage des pods.** Le `CMD` de l'image lance directement Gunicorn et aucun manifeste n'exécute `migrate` à l'initialisation d'un conteneur : avec deux replicas, plusieurs `migrate` s'exécuteraient en parallèle sur la même base. Le Job s'exécute une fois puis se termine, et se supprime cinq minutes après sa réussite (`ttlSecondsAfterFinished: 300`). Relancez-le après chaque changement de schéma, avant de déployer la nouvelle version de l'application :
+
+```bash
+kubectl delete job django-migrate -n dilane-shop --ignore-not-found
+kubectl apply -f k8s/05-migration-job.yaml
+kubectl logs -n dilane-shop job/django-migrate
+```
+
+### 5. Installer le contrôleur Ingress et son correctif de placement
+
+```bash
+kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.15.1/deploy/static/provider/kind/deploy.yaml
+kubectl apply -f k8s/07-ingress-controller-patch.yaml
+kubectl wait --namespace ingress-nginx \
+  --for=condition=ready pod --selector=app.kubernetes.io/component=controller --timeout=180s
+```
+
+Le correctif [k8s/07-ingress-controller-patch.yaml](k8s/07-ingress-controller-patch.yaml) n'est pas facultatif. Le manifeste `provider/kind` devrait contraindre le contrôleur au nœud portant `ingress-ready=true` ; en v1.15.1, son `nodeSelector` ne contient que `kubernetes.io/os: linux`. Sans le correctif, le contrôleur peut se placer sur un nœud de travail, où les ports 80 et 443 ne sont pas mappés vers l'hôte : le site ne répond pas, alors que tous les pods sont `Running`. Vérifiez le placement :
+
+```bash
+kubectl get pods -n ingress-nginx -o wide
+```
+
+Le pod `ingress-nginx-controller` doit être sur `dilane-shop-control-plane`.
+
+### 6. Installer cert-manager et publier le site en HTTPS
+
+```bash
+kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.16.2/cert-manager.yaml
+kubectl wait --namespace cert-manager \
+  --for=condition=available deployment --all --timeout=180s
+
+kubectl apply -f k8s/08-tls.yaml
+kubectl apply -f k8s/06-ingress.yaml
+```
+
+`k8s/08-tls.yaml` déclare un `Issuer` auto-signé et le `Certificate` correspondant ; cert-manager crée le Secret `tls-dilane-shop` que l'Ingress consomme. Il doit donc être appliqué avant l'Ingress.
+
+```bash
+kubectl get certificate -n dilane-shop
+```
+
+La colonne `READY` doit valoir `True`.
+
+Let's Encrypt ne peut pas valider `dilane-shop.local`, qui n'existe que sur le poste : le certificat est **auto-signé**. Le navigateur affichera un avertissement, et `curl` exige `-k`.
+
+### 7. Ajouter le domaine local au fichier hosts
+
+```text
+127.0.0.1 dilane-shop.local
+```
+
+- Linux et macOS : `/etc/hosts`
+- Windows : `C:\Windows\System32\drivers\etc\hosts`, à éditer en administrateur
+- **WSL2** : ajoutez la ligne au fichier hosts **de Windows**. WSL régénère `/etc/hosts` à chaque démarrage et la résolution passe par l'hôte Windows.
+
+### 8. Vérifier
+
+```bash
+kubectl get pods -n dilane-shop -o wide
+curl -k -o /dev/null -w '%{http_code}\n' https://dilane-shop.local/
+curl -k https://dilane-shop.local/healthz/
+```
+
+Réponses attendues : deux pods `django` prêts sur deux nœuds différents, `200` sur la page d'accueil, et `{"status": "ok", "database": "reachable"}` sur l'endpoint de santé. En HTTP, `http://dilane-shop.local/` répond `308` vers HTTPS.
+
+### 9. Peupler la base
+
+```bash
+kubectl exec -n dilane-shop deploy/django -- python manage.py loaddata fixtures/demo-catalogue.json
+kubectl exec -it -n dilane-shop deploy/django -- python manage.py createsuperuser
+```
+
+### Commandes utiles
+
+```bash
+kubectl logs -n dilane-shop deploy/django -f          # journaux applicatifs
+kubectl get events -n dilane-shop --sort-by=.lastTimestamp
+kubectl describe pod -n dilane-shop <nom-du-pod>
+kubectl rollout status -n dilane-shop deploy/django   # suivre une mise à jour
+kubectl delete namespace dilane-shop                  # tout supprimer, sauf le cluster
+kind delete cluster --name dilane-shop                # supprimer le cluster
+```
+
 ## Routes principales
 
 - `/` accueil
@@ -180,6 +347,7 @@ docker compose exec web python manage.py test
 ├── shop/                       # App métier : modèles, vues, services, tests
 ├── templates/                  # Surcharges de gabarits de l'admin
 ├── fixtures/                   # Données de démonstration (loaddata)
+├── k8s/                        # Manifestes Kubernetes et configuration kind
 ├── docs/
 │   ├── adr/                    # Décisions d'architecture
 │   └── sprints/                # Rétrospectives de sprint
@@ -195,8 +363,10 @@ docker compose exec web python manage.py test
 - [docs/AUDIT.md](docs/AUDIT.md) — fonctionnalités implémentées ou mortes, couverture de tests réelle, problèmes de sécurité et dette technique classée par criticité.
 - [docs/HISTORIQUE.md](docs/HISTORIQUE.md) — analyse du journal Git, commits regroupés en phases de travail datées.
 - [docs/adr/001-conteneurisation.md](docs/adr/001-conteneurisation.md) — décision de conteneuriser l’application et de séparer PostgreSQL, avec ses conséquences.
+- [docs/adr/002-kubernetes.md](docs/adr/002-kubernetes.md) — décision de déployer sur Kubernetes plutôt que sur un serveur unique, alternatives chiffrées (AKS, VPS, EKS/GKE) et critères de révision.
 - [docs/adr/003-monolithe-modulaire.md](docs/adr/003-monolithe-modulaire.md) — choix d’un monolithe modulaire plutôt que de microservices, et critères de révision.
 - [docs/sprints/sprint-09-docker.md](docs/sprints/sprint-09-docker.md) — rétrospective du sprint de conteneurisation, décisions techniques et points reportés.
+- [docs/sprints/sprint-10-kubernetes.md](docs/sprints/sprint-10-kubernetes.md) — rétrospective du sprint Kubernetes, diagnostic du placement du contrôleur Ingress et points reportés.
 
 ## Suivi du projet
 
