@@ -11,34 +11,42 @@ on:
 
 jobs:
   ci:
-    runs-on: ubuntu-latest
+    # Version épinglée : ubuntu-latest bascule sur Ubuntu 26 le 19/10/2026.
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout
         uses: actions/checkout@v5
 
-      - name: Setup Python
-        uses: actions/setup-python@v6
-        with:
-          python-version: "3.13"
-
-      - name: Install dependencies
+      # La CI teste l'image réellement déployée, avec PostgreSQL :
+      # fichiers statiques collectés, version de Python et moteur de base
+      # identiques à la production. Ces valeurs n'existent que le temps du job.
+      - name: Prepare environment file
         run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          cp .env.example .env
+          sed -i "s|^DJANGO_SECRET_KEY=.*|DJANGO_SECRET_KEY=ci-$(openssl rand -hex 32)|" .env
+          sed -i "s|^DB_PASSWORD=.*|DB_PASSWORD=ci-$(openssl rand -hex 16)|" .env
+
+      - name: Build image
+        run: docker compose build web
+
+      - name: Start database
+        run: docker compose up -d --wait db
 
       - name: Django check
-        run: python manage.py check
+        run: docker compose run --rm web python manage.py check
 
       - name: Django tests
-        run: python manage.py test
+        run: docker compose run --rm web python manage.py test
 
       - name: Django deployment check
-        env:
-          DJANGO_SECRET_KEY: ci-only-not-a-real-secret
-          DJANGO_DEBUG: "False"
-          DJANGO_ALLOWED_HOSTS: example.com
-          DB_ENGINE: sqlite
-        run: python manage.py check --deploy --fail-level ERROR
+        run: >
+          docker compose run --rm
+          -e DJANGO_ALLOWED_HOSTS=example.com
+          web python manage.py check --deploy --fail-level ERROR
+
+      - name: Stop stack
+        if: always()
+        run: docker compose down -v
 
   deploy:
     runs-on: ubuntu-latest
