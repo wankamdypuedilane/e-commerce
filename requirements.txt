@@ -1,5 +1,5 @@
 Django==6.0.8
-python-dotenv==1.2.2
+python-dotenv==1.2.3
 stripe==15.6.1
 Pillow==12.3.0
 psycopg[binary]==3.3.6
