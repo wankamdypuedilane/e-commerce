@@ -48,6 +48,11 @@ RUN SECRET_KEY=build-only DJANGO_SECRET_KEY=build-only \
     python manage.py collectstatic --noinput \
     && chown -R django:django /app/staticfiles
 
+# Dossier des médias téléversés : le seul emplacement de /app inscriptible
+# par l'application. Créé dans l'image pour que les volumes montés dessus
+# héritent de ce propriétaire.
+RUN mkdir -p /app/media && chown django:django /app/media
+
 USER django
 
 EXPOSE 8000
