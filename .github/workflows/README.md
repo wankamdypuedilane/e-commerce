@@ -1,26 +1,22 @@
-GitHub Actions deployment setup
+# Intégration continue
 
-Required repository secrets:
+Le workflow `ci.yml` s'exécute à chaque push sur `main`, sur chaque pull
+request (dont celles de Dependabot) et à la demande. Il ne déploie rien.
 
-- EC2_HOST: public IP or domain of the EC2 instance
-- EC2_PORT: SSH port (usually 22)
-- EC2_USER: SSH user (usually ubuntu)
-- EC2_PROJECT_PATH: absolute project path on server (example: /home/ubuntu/ecommerce)
-- EC2_SSH_KEY: private key content used for SSH deployment
+Étapes, dans l'ordre :
 
-Workflow behavior:
+1. **Scan des dépendances** avec pip-audit, avant toute construction : échec
+   dès qu'une vulnérabilité connue touche l'application ou ses outils de test.
+2. **Construction** de l'image de production et de l'image de test.
+3. **Tests dans l'image de test**, sur PostgreSQL, avec mesure de couverture
+   et seuil minimal défini dans `.coveragerc`.
+4. **Vérification de configuration** : `check` puis `check --deploy`.
+5. **Test de fumée** : démarrage du vrai conteneur de production, attente de
+   `/healthz/`, échec si les journaux de démarrage contiennent une erreur.
 
-1. Runs CI on push to main: install deps, django check, django tests.
-2. If CI passes, deploys to EC2:
-   - git pull --ff-only origin main
-   - pip install -r requirements.txt
-   - python manage.py migrate --noinput
-   - python manage.py collectstatic --noinput
-   - restart gunicorn and nginx
-   - python manage.py check --deploy
+Aucun secret n'est nécessaire : le fichier `.env` est reconstruit à chaque
+exécution depuis `.env.example`, avec une clé et un mot de passe aléatoires.
 
-Notes:
-
-- The server repository must have origin configured to your GitHub repo.
-- The server must allow sudo for restarting services.
-- Keep production secrets in server .env, never in GitHub repository.
+Le déploiement vers Kubernetes fera l'objet d'un workflow distinct
+(issue #43). L'ancien déploiement SSH vers EC2, désactivé depuis le
+Sprint 9, a été retiré ; il reste consultable dans l'historique Git.

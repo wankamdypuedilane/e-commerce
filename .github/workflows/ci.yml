@@ -1,4 +1,4 @@
-name: CI/CD Deploy EC2
+name: CI
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -73,68 +73,3 @@ jobs:
       - name: Stop stack
         if: always()
         run: docker compose down -v
-
-  deploy:
-    runs-on: ubuntu-latest
-    needs: ci
-    if: false  # Desactive : instance EC2 supprimee. Remplace au Sprint 10 par un deploiement Kubernetes.
-    steps:
-      - name: Validate deploy secrets
-        env:
-          EC2_HOST: ${{ secrets.EC2_HOST }}
-          EC2_PORT: ${{ secrets.EC2_PORT }}
-          EC2_USER: ${{ secrets.EC2_USER }}
-          EC2_PROJECT_PATH: ${{ secrets.EC2_PROJECT_PATH }}
-          EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
-        run: |
-          set -e
-          [[ -n "$EC2_HOST" ]] || { echo "Missing secret: EC2_HOST"; exit 1; }
-          [[ -n "$EC2_USER" ]] || { echo "Missing secret: EC2_USER"; exit 1; }
-          [[ -n "$EC2_PROJECT_PATH" ]] || { echo "Missing secret: EC2_PROJECT_PATH"; exit 1; }
-          [[ -n "$EC2_SSH_KEY" ]] || { echo "Missing secret: EC2_SSH_KEY"; exit 1; }
-          echo "Deploy secrets look present."
-
-      - name: Checkout
-        uses: actions/checkout@v7
-
-      - name: Setup SSH key
-        env:
-          EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
-        run: |
-          set -e
-          mkdir -p ~/.ssh
-          chmod 700 ~/.ssh
-          printf '%s\n' "$EC2_SSH_KEY" > ~/.ssh/deploy_key
-          chmod 600 ~/.ssh/deploy_key
-
-      - name: Add host key
-        env:
-          EC2_PORT: ${{ secrets.EC2_PORT }}
-          EC2_HOST: ${{ secrets.EC2_HOST }}
-        run: |
-          set -e
-          PORT="${EC2_PORT:-22}"
-          ssh-keyscan -T 10 -p "$PORT" -H "$EC2_HOST" >> ~/.ssh/known_hosts
-
-      - name: Deploy on EC2
-        env:
-          EC2_HOST: ${{ secrets.EC2_HOST }}
-          EC2_PORT: ${{ secrets.EC2_PORT }}
-          EC2_USER: ${{ secrets.EC2_USER }}
-          EC2_PROJECT_PATH: ${{ secrets.EC2_PROJECT_PATH }}
-        run: |
-          set -e
-          PORT="${EC2_PORT:-22}"
-          ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes -p "$PORT" "$EC2_USER@$EC2_HOST" "
-            set -e
-            cd '$EC2_PROJECT_PATH'
-            test -d .git
-            git pull --ff-only origin main
-            source .venv/bin/activate
-            pip install -r requirements.txt
-            python manage.py migrate --noinput
-            python manage.py collectstatic --noinput
-            sudo systemctl restart dilane-shop
-            sudo systemctl restart nginx
-            python manage.py check --deploy
-          "
