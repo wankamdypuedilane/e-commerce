@@ -33,7 +33,7 @@ Ce projet a été construit pour aller au-delà d’une simple application web:
 ## Stack technique
 
 - Python 3.13
-- Django 6.0.3
+- Django 6.1 — versions exactes de toutes les dépendances : `requirements.txt`
 - PostgreSQL 17
 - Docker et Docker Compose
 - Kubernetes (kind en local, k3s visé en production)

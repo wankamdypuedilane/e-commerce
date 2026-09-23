@@ -280,15 +280,17 @@ Le job `ci` s'exécute sur `python-version: "3.13"`, alignée sur l'image depuis
 
 ### 4.1 Paquets Python (`requirements.txt`)
 
-| Paquet | Version épinglée | Usage observé |
+Les versions exactes sont épinglées dans `requirements.txt`, seule source de vérité : ce tableau n'indique que la série de chaque paquet, pour ne pas devenir faux à chaque mise à jour.
+
+| Paquet | Série | Usage observé |
 |---|---|---|
-| `Django` | 6.0.3 | Framework. |
-| `python-dotenv` | 1.2.2 | `load_dotenv(BASE_DIR / '.env')`. Import protégé par `try/except ImportError` avec un stub no-op (`settings.py:16-20`). Sans effet en conteneur, où les variables viennent de l'environnement. |
-| `stripe` | 15.0.1 | SDK Stripe. Import protégé par `try/except ImportError` dans `views.py:24-27` et `services.py:11-14`. |
-| `Pillow` | 12.2.0 | Requis par `Product.image_file` (`ImageField`). |
-| `psycopg[binary]` | 3.3.3 | Driver PostgreSQL. `DB_ENGINE=postgres` dans tous les environnements conteneurisés. |
-| `gunicorn` | 23.0.0 | Serveur WSGI, lancé par le `CMD` de l'image. |
-| `whitenoise` | 6.11.0 | Sert les fichiers statiques depuis Gunicorn (ajouté au Sprint 9, issue #24). |
+| `Django` | 6.1 | Framework. |
+| `python-dotenv` | 1.2 | `load_dotenv(BASE_DIR / '.env')`. Import protégé par `try/except ImportError` avec un stub no-op (`settings.py:16-20`). Sans effet en conteneur, où les variables viennent de l'environnement. |
+| `stripe` | 15 | SDK Stripe. Import protégé par `try/except ImportError` dans `views.py:24-27` et `services.py:11-14`. |
+| `Pillow` | 12 | Requis par `Product.image_file` (`ImageField`). |
+| `psycopg[binary]` | 3.3 | Driver PostgreSQL. `DB_ENGINE=postgres` dans tous les environnements conteneurisés. |
+| `gunicorn` | 26 | Serveur WSGI, lancé par le `CMD` de l'image, interface de contrôle désactivée (`--no-control-socket`). |
+| `whitenoise` | 6 | Sert les fichiers statiques depuis Gunicorn (ajouté au Sprint 9, issue #24). |
 
 Aucune dépendance de développement (pas de `pytest`, `coverage`, `ruff`, `black`, ni de `requirements-dev.txt`).
 
