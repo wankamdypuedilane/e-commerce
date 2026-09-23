@@ -57,6 +57,9 @@ USER django
 
 EXPOSE 8000
 
+# --no-control-socket : l'interface de contrôle de gunicorn (depuis la 25.1)
+# n'est pas utilisée ici ; la désactiver réduit la surface d'attaque et évite
+# qu'elle tente d'écrire dans /app, volontairement non inscriptible.
 CMD ["gunicorn", \
      "--bind", "0.0.0.0:8000", \
      "--workers", "3", \
@@ -64,6 +67,7 @@ CMD ["gunicorn", \
      "--timeout", "60", \
      "--access-logfile", "-", \
      "--error-logfile", "-", \
+     "--no-control-socket", \
      "ecommerce.wsgi:application"]
 
 

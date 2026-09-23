@@ -53,6 +53,23 @@ jobs:
           -e DJANGO_ALLOWED_HOSTS=example.com
           web python manage.py check --deploy --fail-level ERROR
 
+      # Test de fumée : démarre le vrai conteneur de production. Les tests
+      # passent par le client de test de Django et ne lancent jamais
+      # gunicorn : sans cette étape, une erreur de démarrage passe inaperçue.
+      - name: Container smoke test
+        run: |
+          docker compose up -d web
+          for i in $(seq 1 20); do
+            curl -fsS http://localhost:8000/healthz/ && break
+            sleep 2
+          done
+          curl -fsS http://localhost:8000/healthz/
+          if docker compose logs web | grep -q '\[ERROR\]'; then
+            echo "Erreur dans les journaux de démarrage :"
+            docker compose logs web
+            exit 1
+          fi
+
       - name: Stop stack
         if: always()
         run: docker compose down -v
