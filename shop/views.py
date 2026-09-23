@@ -361,7 +361,9 @@ def stripe_webhook(request):
                         commande_locked.save(update_fields=['stock_deducted'])
         except Exception as exc:
             logger.exception("Stripe checkout.session.completed processing failed: %s", exc)
-            return HttpResponse(status=200)
+            # 500 et non 200 : Stripe réessaiera l'envoi. Sans danger, le
+            # traitement étant idempotent (drapeau stock_deducted sous verrou).
+            return HttpResponse(status=500)
 
     elif event['type'] == 'checkout.session.expired':
         session = event['data']['object']
