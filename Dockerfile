@@ -1,4 +1,3 @@
-# syntax=docker/dockerfile:1
 
 # ---------- Stage 1 : construction des dependances ----------
 FROM python:3.13-slim AS builder
