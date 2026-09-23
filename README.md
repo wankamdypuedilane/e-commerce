@@ -151,9 +151,13 @@ docker compose down
 
 ## Tests
 
+Les tests s'exécutent dans l'image de test, qui ajoute `coverage` à l'image de production :
+
 ```bash
-docker compose exec web python manage.py test
+docker compose run --rm tests sh -c "coverage run manage.py test && coverage report"
 ```
+
+La couverture est mesurée avec les branches : un `if` n'est couvert que si ses deux issues sont testées. Le seuil minimal, défini dans `.coveragerc`, fonctionne comme un cliquet : fixé juste sous le niveau atteint, il empêche toute baisse et sera relevé à mesure que les tests progressent.
 
 ## Déploiement Kubernetes (local, kind)
 

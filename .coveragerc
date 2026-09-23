@@ -1,0 +1,28 @@
+# Configuration de la mesure de couverture des tests.
+[run]
+# Fichier de mesures dans /tmp : le dossier /app appartient à root et reste
+# non inscriptible par l'utilisateur django, ce qui est voulu en production.
+data_file = /tmp/.coverage
+# Code mesuré : l'application et sa configuration
+source =
+    shop
+    ecommerce
+# Exclus : ce qui n'a pas vocation à être testé
+omit =
+    */migrations/*
+    */test*.py
+    ecommerce/asgi.py
+    ecommerce/wsgi.py
+# Mesure aussi les branches : un "if" dont seul le cas vrai est testé
+# n'est pas compté comme couvert
+branch = True
+
+[report]
+# Cliquet : fixé juste sous le niveau atteint (69,9 % au 23/09/2026).
+# La couverture ne peut plus baisser sans faire échouer la CI.
+# À relever à mesure que des tests sont ajoutés, jamais à abaisser.
+fail_under = 69
+precision = 1
+# Affiche les numéros de lignes non couvertes
+show_missing = True
+skip_empty = True

@@ -27,7 +27,7 @@ jobs:
           sed -i "s|^DB_PASSWORD=.*|DB_PASSWORD=ci-$(openssl rand -hex 16)|" .env
 
       - name: Build image
-        run: docker compose build web
+        run: docker compose build web tests
 
       - name: Start database
         run: docker compose up -d --wait db
@@ -35,8 +35,8 @@ jobs:
       - name: Django check
         run: docker compose run --rm web python manage.py check
 
-      - name: Django tests
-        run: docker compose run --rm web python manage.py test
+      - name: Django tests with coverage
+        run: docker compose run --rm tests sh -c "coverage run manage.py test && coverage report"
 
       - name: Django deployment check
         run: >

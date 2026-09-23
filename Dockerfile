@@ -23,7 +23,7 @@ RUN pip install --upgrade pip && pip install -r requirements.txt
 
 
 # ---------- Stage 2 : image d'execution ----------
-FROM python:3.13-slim AS runtime
+FROM python:3.13-slim AS base
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -60,3 +60,17 @@ CMD ["gunicorn", \
      "--access-logfile", "-", \
      "--error-logfile", "-", \
      "ecommerce.wsgi:application"]
+
+
+# ---------- Étape test : image de production + outils de test ----------
+# Construite uniquement avec --target test, pour la CI. Jamais déployée.
+FROM base AS test
+USER root
+RUN pip install --no-cache-dir -r requirements-dev.txt
+USER django
+
+
+# ---------- Étape finale : image de production ----------
+# Doit rester la dernière : c'est celle que Docker construit par défaut,
+# sans --target, notamment pour Kubernetes.
+FROM base AS runtime
