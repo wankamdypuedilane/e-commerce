@@ -16,6 +16,11 @@ class EmailOrUsernameModelBackend(ModelBackend):
         try:
             user = user_model.objects.get(Q(email__iexact=login_value) | Q(username__iexact=login_value))
         except user_model.DoesNotExist:
+            # Hachage volontaire d'un mot de passe jetable : la réponse prend
+            # le même temps qu'un compte existe ou non. Sans cela, chronométrer
+            # les réponses révèle quels emails sont inscrits. Même parade que
+            # le ModelBackend de Django.
+            user_model().set_password(password)
             return None
         except user_model.MultipleObjectsReturned:
             # Fall back to a deterministic user when duplicate emails exist.
