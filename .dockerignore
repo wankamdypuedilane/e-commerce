@@ -32,3 +32,5 @@ k8s/
 Dockerfile
 docker-compose.yml
 .github/
+.env.example
+.dockerignore

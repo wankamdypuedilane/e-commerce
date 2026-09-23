@@ -155,3 +155,9 @@ Trois limites sont constatées au moment de la rédaction et ne sont pas couvert
 - [ADR-003 — Monolithe modulaire plutôt que microservices](003-monolithe-modulaire.md)
 - [docs/AUDIT.md](../AUDIT.md) — numérotation des dettes citées
 - [docs/sprints/sprint-09-docker.md](../sprints/sprint-09-docker.md)
+
+## Erratum (23/09/2026)
+
+Cette décision présentait comme une qualité la copie du code avec `COPY --chown=django:django`, le code et le processus partageant le même propriétaire. C'était une faiblesse : le processus applicatif pouvait modifier le code qu'il exécute.
+
+Depuis le commit 80278b6 (issue #84), le code est copié en tant que root, lisible mais non modifiable par l'utilisateur `django`. Seul `/app/media` lui appartient. Le reste de cette décision est inchangé.

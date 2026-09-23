@@ -124,6 +124,16 @@ Le comportement est documenté par un test, pas corrigé : une vraie correction 
 
 Rendre `/app` inscriptible aurait réglé le problème, en retirant une propriété de sécurité : un processus compromis ne peut pas modifier le code qu'il exécute. La propriété a été conservée ; le fichier de mesures est écrit dans `/tmp` (`data_file = /tmp/.coverage` dans `.coveragerc`).
 
+> **Erratum (23/09/2026).**
+>
+> **L'erreur.** Cette section affirme que `/app` appartient à `root` et qu'un processus compromis ne peut pas modifier le code qu'il exécute. C'était faux à la date du sprint. Seul le répertoire `/app` lui-même appartenait à `root`. Le Dockerfile copiait le code avec `COPY --chown=django:django . .` : tous les fichiers et sous-répertoires copiés (`manage.py`, `shop/`, `ecommerce/`…) appartenaient à `django`, et `staticfiles/` lui était confié par `chown -R`. Le processus applicatif pouvait donc réécrire ses vues et sa configuration. La propriété de sécurité décrite ici n'existait pas.
+>
+> **La cause.** La conclusion a été tirée d'une seule écriture refusée : la création de `.coverage` à la racine de `/app`. Cet échec prouvait seulement que le répertoire `/app` n'était pas inscriptible, pas que les fichiers qu'il contient ne l'étaient pas. Leur propriétaire n'a pas été vérifié. La même affirmation a été reprise dans le message de `215bac9`, dans le commentaire de `.coveragerc`, puis dans `6bf7a60`. L'erreur a été relevée pendant la synchronisation de la documentation, en tentant d'écrire dans `/app/shop` depuis l'image.
+>
+> **La correction.** Commit `80278b6` (issue #84) : le code est désormais copié en tant que `root`, sans `--chown`, et `staticfiles/` n'est plus confié à `django`. Tout `/app` appartient à `root` sauf `/app/media`, seul emplacement inscriptible par l'application. Deux tests de `shop/test_image.py`, exécutés dans l'image sous l'utilisateur `django`, vérifient que le code reste lisible et non modifiable. Écrits avant la correction, ils échouaient.
+>
+> Le contenu de cette rétrospective n'est pas modifié ; seul cet encadré a été ajouté.
+
 ### Deux fausses assurances venues d'une sortie mal lue
 
 À deux reprises pendant le sprint, une vérification a paru réussie alors qu'elle ne prouvait rien :

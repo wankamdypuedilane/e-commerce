@@ -1,9 +1,11 @@
 # Architecture
 
-Document de rattrapage — état observé du dépôt au 20/09/2026, **après les Sprints 9 (conteneurisation) et 10 (Kubernetes)**.
+Document de rattrapage — état observé du dépôt au 23/09/2026, **après les Sprints 9 (conteneurisation), 10 (Kubernetes) et 11 (tests)**.
 Tout ce qui suit décrit le code tel qu'il existe, sans recommandation.
 
 > **Mise à jour du 20/09/2026.** La version précédente de ce document décrivait l'état antérieur au Sprint 9 : base SQLite versionnée, déploiement sur une instance EC2 unique, aucun conteneur. Ce qui concerne AWS a été déplacé en [§5 Historique](#5-historique--déploiement-aws-ec2-jusquau-sprint-9) et n'est plus actif. Les sections 1 à 4 décrivent l'architecture actuelle : Docker Compose en local, Kubernetes pour le déploiement.
+>
+> **Mise à jour du 23/09/2026.** Intègre le Sprint 11 et ce qui l'a suivi : étape `test` du Dockerfile et service Compose `tests`, mesure de couverture, workflow renommé `CI` (`.github/workflows/ci.yml`) sans job de déploiement, scan pip-audit, Dependabot, contrôle de propriétaire sur les pages de commande, code de l'image non modifiable par l'utilisateur `django` (#84), contexte de build réduit (#64), `.vscode/` retiré du dépôt.
 
 ---
 
@@ -12,14 +14,16 @@ Tout ce qui suit décrit le code tel qu'il existe, sans recommandation.
 ```text
 e-commerce/
 ├── manage.py                     # Point d'entrée CLI Django, DJANGO_SETTINGS_MODULE=ecommerce.settings
-├── requirements.txt              # 7 dépendances épinglées (versions exactes)
-├── Dockerfile                    # Image multi-stage python:3.13-slim, utilisateur non-root 'django'
-├── docker-compose.yml            # Services 'web' et 'db', volumes nommés postgres_data et media_files
-├── .dockerignore                 # Exclusions du contexte de build
-├── README.md                     # Documentation projet, réécrite au commit 8e062e6
+├── requirements.txt              # 7 dépendances d'exécution épinglées (versions exactes)
+├── requirements-dev.txt          # -r requirements.txt + coverage ; installé seulement dans l'étape 'test'
+├── .coveragerc                   # Couverture : branches, sources shop et ecommerce, seuil fail_under en cliquet
+├── Dockerfile                    # 4 étapes python:3.13-slim : builder, base, test, runtime (dernière)
+├── docker-compose.yml            # Services 'web', 'db' et 'tests' (profil test), volumes postgres_data et media_files
+├── .dockerignore                 # Exclusions du contexte de build, dont k8s/, Dockerfile, docker-compose.yml, .github/
+├── README.md                     # Documentation projet
 ├── .env                          # Secrets locaux, ignoré par git, absent de l'image
 ├── .env.example                  # Gabarit des 26 variables d'environnement
-├── .gitignore                    # Ignore .env, __pycache__, *.pyc, *.sqlite3, staticfiles/, media/, .venv/, tfstate
+├── .gitignore                    # Ignore .env, __pycache__, *.pyc, *.sqlite3, staticfiles/, media/, .venv/, .vscode/, tfstate
 ├── db.sqlite3                    # Présent sur le poste, NON versionné depuis le Sprint 9 (retiré de l'historique)
 │
 ├── ecommerce/                    # Package de configuration Django (projet)
@@ -37,7 +41,14 @@ e-commerce/
 │   ├── backends.py               # EmailOrUsernameModelBackend : login par email OU username
 │   ├── admin.py                  # 4 ModelAdmin + inline OrderItem, branding "E-commerce"
 │   ├── apps.py                   # ShopConfig, name='shop' (pas de default_auto_field)
-│   ├── tests.py                  # 9 tests répartis en 4 TestCase
+│   ├── tests.py                  # 9 tests d'origine (modèle, checkout, authentification)
+│   ├── test_webhook.py           # Webhook Stripe, signature réelle : 8 tests
+│   ├── test_tva.py               # Calcul de TVA, SimpleTestCase : 10 tests
+│   ├── test_stripe_session.py    # Lignes et session Stripe, SimpleTestCase : 6 tests
+│   ├── test_auth.py              # Backend de connexion par email et formulaires : 13 tests
+│   ├── test_acces_commandes.py   # Contrôle de propriétaire des pages de commande : 8 tests
+│   ├── test_medias.py            # /app/media inscriptible par l'utilisateur django : 1 test
+│   ├── test_image.py             # Code lisible mais non modifiable par django, dans l'image : 2 tests
 │   ├── migrations/               # 15 migrations (0001 → 0015), dont 2 data migrations
 │   ├── static/shop/
 │   │   └── favicon.svg           # Unique fichier statique du projet (aucun CSS/JS local)
@@ -56,7 +67,7 @@ e-commerce/
 ├── k8s/                          # Manifestes Kubernetes (Sprint 10)
 │   ├── kind-cluster.yaml         # Cluster local 3 nœuds : 1 control-plane + 2 workers
 │   ├── 00-namespace.yaml         # Namespace dilane-shop
-│   ├── 01-configmap.yaml         # 11 clés de configuration non sensible
+│   ├── 01-configmap.yaml         # 12 clés de configuration non sensible
 │   ├── 02-secrets.example.yaml   # MODÈLE sans valeur — le Secret réel n'est jamais versionné
 │   ├── 03-postgres.yaml          # Service headless + StatefulSet + volumeClaimTemplates 2 Gi
 │   ├── 04-django.yaml            # Service ClusterIP + Deployment 2 replicas, probes, maxUnavailable 0
@@ -74,9 +85,11 @@ e-commerce/
 │   ├── README.md                 # Mode d'emploi Terraform
 │   └── .gitignore                # Ignore .terraform/, tfstate, terraform.tfvars
 │
-├── .github/workflows/
-│   ├── deploy.yml                # job 'ci' actif (Python 3.13) ; job 'deploy' EC2 neutralisé par if: false
-│   └── README.md                 # Liste des 5 secrets GitHub attendus (job neutralisé)
+├── .github/
+│   ├── dependabot.yml            # Mises à jour hebdomadaires : pip, image Docker, GitHub Actions
+│   └── workflows/
+│       ├── ci.yml                # Workflow 'CI' : un job 'ci', aucun déploiement, aucun secret
+│       └── README.md             # Étapes de la CI
 │
 ├── scripts/                      # ARCHIVE — sauvegarde/restauration PostgreSQL, chemins obsolètes
 │   ├── backup_postgres.sh        # pg_dump + gzip + rétention 14 jours
@@ -87,15 +100,17 @@ e-commerce/
     ├── AUDIT.md                  # Photographie du 20/09/2026, annotée de l'état de résolution
     ├── MODELE-DONNEES.md
     ├── HISTORIQUE.md
+    ├── definition-of-done.md     # Critères de fin de tâche, datés du Sprint 11
     ├── ops-backup.md             # Marqué obsolète en tête de fichier
-    ├── terraform-next-step.md    # Préexistant, relatif à l'archive AWS
+    ├── terraform-next-step.md    # Marqué obsolète en tête de fichier, relatif à l'archive AWS
     ├── adr/
     │   ├── 001-conteneurisation.md
     │   ├── 002-kubernetes.md
     │   └── 003-monolithe-modulaire.md
     └── sprints/
         ├── sprint-09-docker.md
-        └── sprint-10-kubernetes.md
+        ├── sprint-10-kubernetes.md
+        └── sprint-11-tests.md
 ```
 
 **Changements d'arborescence depuis la version précédente de ce document :**
@@ -136,14 +151,26 @@ L'app n'est pas découpée en modules Django, mais en couches de fichiers :
 
 Le panier n'a **aucune existence serveur** : il vit intégralement dans le `localStorage` du navigateur, sous la clé `panier_user_<id>` (connecté) ou `panier_guest` (anonyme), définie dans `shop/templates/shop/base.html:175-176`. Il n'est transmis au serveur qu'au moment du POST `/checkout`, via un champ caché `items` contenant du JSON.
 
+### Contrôle d'accès aux pages de commande
+
+Depuis l'issue #70 (`dd2e594`), les trois vues qui reçoivent un identifiant de commande exigent une connexion et ne cherchent que parmi les commandes de l'utilisateur connecté :
+
+| Vue | Protection | Recherche de la commande |
+|---|---|---|
+| `confirmation` (`views.py:238-243`) | `@login_required(login_url='/connexion/')` | Sans identifiant : dernière commande **de l'utilisateur** (`filter(user=request.user)`). Avec identifiant : `get_object_or_404(Commande, id=order_id, user=request.user)`. |
+| `payment_success` (`views.py:266-275`) | `@login_required(login_url='/connexion/')` | `get_object_or_404(Commande, id=order_id, user=request.user)` |
+| `payment_cancel` (`views.py:293-297`) | `@login_required(login_url='/connexion/')` | `Commande.objects.filter(id=order_id, user=request.user).first()` |
+
+La commande d'un autre client répond 404, pas 403 : un 403 confirmerait son existence. Une commande sans utilisateur n'est accessible à personne, sauf depuis l'admin. Ces règles sont vérifiées par `shop/test_acces_commandes.py`.
+
 ### Point d'entrée ajouté au Sprint 10
 
-`shop/views.py:423` définit `healthz`, câblée sur `/healthz/` (`shop/urls.py:20`). La vue exécute un `SELECT 1` et retourne :
+`shop/views.py:428` définit `healthz`, câblée sur `/healthz/` (`shop/urls.py:20`). La vue exécute un `SELECT 1` et retourne :
 
 - `200` et `{"status": "ok", "database": "reachable"}` si la base répond ;
 - `503` et `{"status": "degraded", "database": "unreachable"}` sinon.
 
-Elle est sans authentification et sans gabarit : les sondes Kubernetes doivent pouvoir l'appeler avant que le pod ne reçoive du trafic. C'est la seule vue du projet écrite pour l'infrastructure et non pour un utilisateur.
+Elle est sans authentification et sans gabarit : les sondes Kubernetes doivent pouvoir l'appeler avant que le pod ne reçoive du trafic, et le test de fumée de la CI l'interroge pour vérifier que le conteneur de production démarre. C'est la seule vue du projet écrite pour l'infrastructure et non pour un utilisateur.
 
 ---
 
@@ -151,7 +178,29 @@ Elle est sans authentification et sans gabarit : les sondes Kubernetes doivent p
 
 Deux environnements exécutent **la même image**, construite depuis le `Dockerfile` : Docker Compose en local, Kubernetes pour le déploiement. L'arbitrage entre les deux est documenté dans l'[ADR-002](adr/002-kubernetes.md).
 
-### 3.1 Exécution locale — Docker Compose
+### 3.1 Image Docker
+
+Le `Dockerfile` compte quatre étapes, toutes sur `python:3.13-slim` :
+
+| Étape | Rôle |
+|---|---|
+| `builder` | Installe `build-essential` et `libpq-dev`, crée le virtualenv `/opt/venv` et y installe `requirements.txt`. |
+| `base` | Installe la seule bibliothèque `libpq5`, crée l'utilisateur système `django`, copie `/opt/venv` et le code, exécute `collectstatic`, crée `/app/media`, bascule sur `USER django` et déclare le `CMD` Gunicorn. |
+| `test` | Part de `base`, installe `requirements-dev.txt` (donc `coverage`). Construite seulement avec `--target test`, par le service Compose `tests`. Jamais déployée. |
+| `runtime` | `FROM base`, sans instruction supplémentaire. **Doit rester la dernière** : c'est l'étape que Docker construit sans `--target`, donc celle de `docker compose build web` et de `docker build` pour Kubernetes. |
+
+Contenu de `/app`, vérifié dans une image construite depuis le dépôt : `manage.py`, `ecommerce/`, `shop/`, `templates/`, `fixtures/`, `staticfiles/`, `media/`, ainsi que `requirements.txt`, `requirements-dev.txt` (lu par l'étape `test`), `.coveragerc`, `.env.example` et `.dockerignore`. Depuis l'issue #64 (`a9b7014`), `.dockerignore` exclut aussi `k8s/`, `Dockerfile`, `docker-compose.yml` et `.github/`, qui décrivent l'infrastructure et ne servent pas à l'exécution. Il exclut par ailleurs, notamment, `.git/`, `.venv/`, `.env`, `*.sqlite3`, `staticfiles/`, `media/`, `.vscode/`, `docs/`, `infra/`, `scripts/` et `README.md`.
+
+Propriété des fichiers, vérifiée dans la même image, sous l'utilisateur `django` :
+
+- **tout `/app` appartient à `root`, sauf `/app/media`.** Depuis l'issue #84 (`80278b6`), le code est copié par `COPY . .` sans `--chown` : `django` peut le lire mais ni le modifier ni créer de fichier dans `/app`, `shop/` ou `ecommerce/`. Un processus compromis ne peut pas réécrire les vues ou la configuration qu'il exécute. Deux tests de `shop/test_image.py`, exécutés dans l'image de test, vérifient que le code reste lisible et non modifiable ;
+- `/app/staticfiles` appartient aussi à `root` : `collectstatic` s'exécute pendant la construction, et WhiteNoise n'a besoin que de lire ces fichiers ;
+- `/app/media` (créé par `mkdir` puis `chown`, issue #71) est **le seul emplacement de `/app` qui appartient à `django`**. Un volume monté dessus hérite de ce propriétaire ;
+- puisque `/app` n'est pas inscriptible, `.coveragerc` écrit ses mesures dans `/tmp/.coverage` et Gunicorn est lancé avec `--no-control-socket`.
+
+Le `CMD` lance `gunicorn --bind 0.0.0.0:8000 --workers 3 --worker-class sync --timeout 60`, journaux d'accès et d'erreur sur la sortie standard, et `--no-control-socket` : l'interface de contrôle de Gunicorn, apparue en série 25, tenterait sinon de créer son socket dans `/app` et journaliserait une erreur à chaque démarrage.
+
+### 3.2 Exécution locale — Docker Compose
 
 ```mermaid
 graph TB
@@ -188,13 +237,14 @@ graph TB
 Points factuels :
 
 - `web` déclare `depends_on: db: condition: service_healthy` : il ne démarre pas avant que `pg_isready` ne réussisse.
+- Un troisième service, `tests`, construit l'étape `test` du Dockerfile (image `dilane-shop:test`), lit le même `.env` et dépend aussi de `db`. Il porte le profil `test` : `docker compose up` ne le démarre jamais, il n'est lancé que par `docker compose run --rm tests …`. Il n'apparaît pas sur le diagramme.
 - Les migrations **ne sont pas jouées au démarrage**. Le `CMD` lance directement Gunicorn ; sur un volume `postgres_data` neuf, `migrate` doit être lancé à la main.
 - Aucun Nginx : WhiteNoise sert les fichiers statiques depuis Gunicorn, avec une empreinte de contenu dans le nom des fichiers.
 - Les secrets sont dans `.env`, en clair sur le disque de l'hôte, transmis au conteneur par `env_file`.
 
-### 3.2 Déploiement — Kubernetes
+### 3.3 Déploiement — Kubernetes
 
-Validé sur un cluster `kind` à trois nœuds (Kubernetes v1.37.0). La cible d'hébergement durable est `k3s` sur une VM Azure, non encore créée.
+Validé sur un cluster `kind` à trois nœuds (Kubernetes, série 1.37). La cible d'hébergement durable est `k3s` sur une VM Azure, non encore créée.
 
 ```mermaid
 graph TB
@@ -202,11 +252,11 @@ graph TB
 
     subgraph CLUSTER["Cluster Kubernetes — kind, 3 nœuds"]
         subgraph CP["nœud control-plane — ingress-ready=true, ports 80/443 mappés vers l'hôte"]
-            ING["ingress-nginx-controller v1.15.1<br/>placement forcé par 07-ingress-controller-patch.yaml"]
+            ING["ingress-nginx-controller, série 1.15<br/>placement forcé par 07-ingress-controller-patch.yaml"]
         end
 
         subgraph NSCM["namespace cert-manager"]
-            CM["cert-manager v1.16.2<br/>controller, cainjector, webhook"]
+            CM["cert-manager, série 1.16<br/>controller, cainjector, webhook"]
         end
 
         subgraph NS["namespace dilane-shop"]
@@ -218,7 +268,7 @@ graph TB
             SVCP["Service postgres<br/>headless, clusterIP None"]
             PG["StatefulSet postgres-0<br/>postgres:17-alpine<br/>PGDATA=/var/lib/postgresql/data/pgdata"]
             PVC[("PVC donnees-postgres-0<br/>2 Gi, StorageClass standard")]
-            CFG["ConfigMap dilane-shop-config<br/>11 clés non sensibles"]
+            CFG["ConfigMap dilane-shop-config<br/>12 clés non sensibles"]
             SEC["Secret dilane-shop-secrets<br/>8 clés, créé par kubectl<br/>base64, non chiffré"]
             TLS["Certificate dilane-shop-tls<br/>Issuer selfSigned<br/>90 j, renouvellement à 15 j"]
         end
@@ -259,20 +309,32 @@ Points factuels sur ce déploiement :
 - **Aucune image n'est téléchargée depuis un registre.** `imagePullPolicy: IfNotPresent` et `kind load docker-image` : l'image reste locale. Un déploiement distant exigera un registre, ce qui n'est pas fait.
 - **Les secrets ne sont pas écrits sur le disque de l'hôte**, mais un Secret Kubernetes est encodé en base64, pas chiffré. Une commande `kubectl` suffit à lire une valeur en clair.
 - **Le certificat est auto-signé.** Let's Encrypt ne peut pas valider `dilane-shop.local`, qui n'existe que dans le fichier `hosts` du poste. La durée (90 jours) et la fenêtre de renouvellement (15 jours) reprennent celles de Let's Encrypt pour que la bascule ne change que l'`issuerRef`.
-- **Le placement du contrôleur Ingress est corrigé par un manifeste du dépôt.** Le manifeste `provider/kind` v1.15.1 ne contraint pas le contrôleur au nœud portant `ingress-ready=true` : son `nodeSelector` ne contient que `kubernetes.io/os: linux`. Sans le correctif, le pod peut se placer sur un worker, où les ports 80 et 443 ne sont pas mappés.
-- **Le déploiement n'est pas automatisé.** Le job `deploy` de la CI reste neutralisé par `if: false` ; aucun job ne remplace encore le déploiement EC2.
+- **Le placement du contrôleur Ingress est corrigé par un manifeste du dépôt.** Le manifeste `provider/kind` de la série 1.15, dans la version installée par le README, ne contraint pas le contrôleur au nœud portant `ingress-ready=true` : son `nodeSelector` ne contient que `kubernetes.io/os: linux`. Sans le correctif, le pod peut se placer sur un worker, où les ports 80 et 443 ne sont pas mappés.
+- **Le déploiement n'est pas automatisé.** Aucun workflow ne déploie : l'image est construite et chargée à la main (`kind load docker-image`). La publication de l'image dans un registre depuis la CI est suivie par l'issue #43.
 
-### 3.3 Chaîne d'intégration continue
+### 3.4 Chaîne d'intégration continue
+
+Un seul workflow, nommé `CI`, fichier `.github/workflows/ci.yml` (anciennement `deploy.yml`, renommé au commit `1d37f77`, qui a aussi retiré le job de déploiement EC2).
 
 ```mermaid
 graph LR
-    DEV["Poste de développement<br/>docker compose / kind"] -->|git push main| REPO["GitHub<br/>wankamdypuedilane/e-commerce"]
-    REPO --> CI["job ci — ubuntu-latest, Python 3.13<br/>pip install<br/>manage.py check<br/>manage.py test<br/>manage.py check --deploy --fail-level ERROR"]
-    REPO --> DEPLOY["job deploy — SSH vers EC2<br/>if: false — NEUTRALISE"]
-    style DEPLOY fill:#eeeeee,stroke:#999,stroke-dasharray: 4 3
+    DEV["Poste de développement<br/>docker compose / kind"] -->|"push sur main,<br/>pull request,<br/>déclenchement manuel"| REPO["GitHub<br/>wankamdypuedilane/e-commerce"]
+    DEPB["Dependabot<br/>pip, image Docker, GitHub Actions<br/>chaque semaine"] -->|pull request| REPO
+    REPO --> CI["job ci — ubuntu-24.04"]
+    CI --> S1["1. scan pip-audit<br/>requirements-dev.txt"]
+    S1 --> S2["2. construction des images<br/>web et tests"]
+    S2 --> S3["3. manage.py check<br/>image web"]
+    S3 --> S4["4. tests + couverture<br/>image tests, PostgreSQL"]
+    S4 --> S5["5. check --deploy<br/>--fail-level ERROR"]
+    S5 --> S6["6. test de fumée<br/>conteneur web, /healthz/"]
 ```
 
-Le job `ci` s'exécute sur `python-version: "3.13"`, alignée sur l'image depuis l'issue #28. Les tests tournent sur le runner, pas dans l'image.
+- **Déclencheurs** : `push` sur `main`, `pull_request` (toutes branches, dont les propositions de Dependabot) et `workflow_dispatch`.
+- **Runner** : `ubuntu-24.04`, épinglé plutôt que `ubuntu-latest`. Une seule action externe : `actions/checkout@v7`. Python n'est pas installé sur le runner : tout s'exécute dans des conteneurs.
+- **Environnement** : `.env` est recopié depuis `.env.example`, avec une `DJANGO_SECRET_KEY` et un `DB_PASSWORD` aléatoires générés à chaque exécution. **Aucun secret GitHub n'est utilisé.**
+- **Ordre des étapes** : scan pip-audit (dans un conteneur `python:3.13-slim` jetable) **avant toute construction** ; `docker compose build web tests` ; démarrage de `db` ; `manage.py check` dans `web` ; `coverage run manage.py test && coverage report` dans `tests`, contre PostgreSQL, avec échec sous le seuil `fail_under` de `.coveragerc` ; `check --deploy --fail-level ERROR` dans `web` ; test de fumée ; arrêt de la pile par `docker compose down -v`, exécuté même en cas d'échec.
+- **Test de fumée** : démarre le vrai conteneur `web`, attend jusqu'à 40 secondes que `/healthz/` réponde, puis échoue si les journaux de démarrage contiennent `[ERROR]`. Les tests passent par le client de test de Django et ne lancent jamais Gunicorn : sans cette étape, une erreur de démarrage passerait inaperçue.
+- **Aucun job de déploiement.** Le futur déploiement Kubernetes fera l'objet d'un workflow distinct (issue #43).
 
 ---
 
@@ -292,7 +354,12 @@ Les versions exactes sont épinglées dans `requirements.txt`, seule source de v
 | `gunicorn` | 26 | Serveur WSGI, lancé par le `CMD` de l'image, interface de contrôle désactivée (`--no-control-socket`). |
 | `whitenoise` | 6 | Sert les fichiers statiques depuis Gunicorn (ajouté au Sprint 9, issue #24). |
 
-Aucune dépendance de développement (pas de `pytest`, `coverage`, `ruff`, `black`, ni de `requirements-dev.txt`).
+**Dépendances de développement** (`requirements-dev.txt`) : le fichier inclut `requirements.txt` (`-r`) et n'ajoute que `coverage` (série 7). Il n'est installé que dans l'étape `test` du Dockerfile, jamais dans l'image de production. Aucun linter ni formateur n'est installé (pas de `ruff`, `black` ni `pytest`).
+
+**Surveillance des dépendances :**
+
+- **pip-audit** tourne dans la CI, avant toute construction, sur `requirements-dev.txt` (donc sur les dépendances d'exécution et de test). La version de pip-audit est épinglée dans la commande du workflow. Toute vulnérabilité connue fait échouer la CI.
+- **Dependabot** (`.github/dependabot.yml`) propose chaque semaine des pull requests pour trois écosystèmes : `pip`, `docker` (image de base du Dockerfile) et `github-actions`. La limite de pull requests ouvertes simultanément est fixée à 5 pour `pip`. Chaque proposition passe par la CI.
 
 ### 4.2 Stripe
 
@@ -306,7 +373,7 @@ Aucune dépendance de développement (pas de `pytest`, `coverage`, `ruff`, `blac
 | Métadonnée | `metadata={'commande_id': str(commande.id)}` |
 | URLs de retour | `success_url` = `/paiement/succes/?session_id={CHECKOUT_SESSION_ID}&order_id=<id>`, `cancel_url` = `/paiement/annule/?order_id=<id>` |
 | Webhook | `POST /webhooks/stripe/`, vue `stripe_webhook`, décorée `@csrf_exempt`, signature vérifiée par `stripe.Webhook.construct_event` |
-| Événements traités | `checkout.session.completed` (synchronisation + décrément de stock) et `checkout.session.expired` (annulation + réincrément). Tout autre événement renvoie 200 sans traitement. |
+| Événements traités | `checkout.session.completed` (synchronisation + décrément de stock) et `checkout.session.expired` (annulation + réincrément). Tout autre événement renvoie 200 sans traitement. Une erreur pendant le traitement de `checkout.session.completed` renvoie 500, pour que Stripe renvoie l'événement (`6f177e9`). |
 | Lecture serveur | `sync_commande_payment_from_stripe` appelle `stripe.checkout.Session.retrieve` depuis 3 endroits : le webhook, `payment_success` et `confirmation`. |
 
 Aucune clé publique Stripe n'est exposée dans les templates : il n'y a pas de Stripe.js, le paiement se fait par redirection vers l'URL de session hébergée.
@@ -323,6 +390,7 @@ Aucune clé publique Stripe n'est exposée dans les templates : il n'y a pas de 
 | Expéditeur | `EMAIL_FROM`, avec pour valeur par défaut codée en dur l'adresse personnelle `wankamdypuedilane@gmail.com` (`settings.py:181`) |
 | Emails envoyés | 1) confirmation de commande (`send_order_confirmation_email`, multipart texte + HTML, `fail_silently=False`) ; 2) réinitialisation de mot de passe utilisateur ; 3) réinitialisation de mot de passe admin |
 | Anti-doublon | Champ `Commande.confirmation_email_sent`, positionné à `True` après envoi |
+| Dépréciation | Django 6.1 déprécie les réglages `EMAIL_*` au profit de `MAILERS` : la configuration actuelle produit des avertissements de dépréciation. Migration suivie par l'issue #82. |
 | Déclencheurs de l'email de confirmation | `sync_commande_payment_from_stripe` (si passage à `paid`), plus deux rattrapages dans `payment_success` et `confirmation` |
 
 ### 4.4 Base de données
@@ -340,17 +408,17 @@ Remarques factuelles :
 - `DB_HOST` est un nom de service, pas une adresse IP : `db` sous Docker Compose (DNS Docker), `postgres` sous Kubernetes (DNS du Service headless).
 - `DB_SSLMODE=disable` dans les deux environnements : le trafic PostgreSQL ne sort pas du réseau du conteneur ou du cluster.
 - Le code utilise `select_for_update()` dans `checkout` et `stripe_webhook`. Ce verrouillage a désormais partout la sémantique PostgreSQL.
-- Les scripts `scripts/backup_postgres.sh` et `scripts/restore_postgres.sh` visent des chemins d'un serveur qui n'existe plus. **Il n'existe aucune procédure de sauvegarde active**, ni pour le volume `postgres_data`, ni pour le PVC `donnees-postgres-0`.
+- Les scripts `scripts/backup_postgres.sh` et `scripts/restore_postgres.sh` visent des chemins d'un serveur qui n'existe plus. **Il n'existe aucune procédure de sauvegarde active**, ni pour le volume `postgres_data`, ni pour le PVC `donnees-postgres-0`. La sauvegarde automatisée est suivie par l'issue #83.
 
 ### 4.5 Dépendances front chargées par CDN
 
-Référencées dans `shop/templates/shop/base.html`, non versionnées dans le dépôt :
+Référencées dans `shop/templates/shop/base.html`, non versionnées dans le dépôt. La version exacte figure dans chaque URL :
 
-| Ressource | Version | Ligne |
+| Ressource | Série | Ligne |
 |---|---|---|
-| Bootstrap CSS | 5.3.8 — `cdn.jsdelivr.net` | `base.html:15` |
-| Popper | 2.11.8 — `cdn.jsdelivr.net` | `base.html:31` |
-| Bootstrap JS | 5.3.8 — `cdn.jsdelivr.net` | `base.html:36` |
+| Bootstrap CSS | 5.3 — `cdn.jsdelivr.net` | `base.html:15` |
+| Popper | 2.11 — `cdn.jsdelivr.net` | `base.html:31` |
+| Bootstrap JS | 5.3 — `cdn.jsdelivr.net` | `base.html:36` |
 
 La feuille de style **Bootstrap Icons n'est pas chargée**, alors qu'une classe `bi bi-check-circle-fill` est utilisée dans `shop/templates/shop/confirmation.html:7`. Cette icône ne s'affiche donc pas. C'est le seul usage de `bi bi-*` du projet.
 
@@ -358,21 +426,21 @@ La feuille de style **Bootstrap Icons n'est pas chargée**, alors qu'une classe 
 
 | Élément | Détail |
 |---|---|
-| Images de base | `python:3.13-slim` (builder et runtime), `postgres:17-alpine` |
-| Docker | Image applicative `dilane-shop`, étiquetée `0.1.0` dans `docker-compose.yml` et `0.2.0` dans `k8s/04-django.yaml` |
-| kind | v0.33.0 — cluster `dilane-shop`, 3 nœuds, Kubernetes v1.37.0 |
-| kubectl | v1.37.0 |
-| ingress-nginx | v1.15.1, manifeste `provider/kind`, complété par `k8s/07-ingress-controller-patch.yaml` |
-| cert-manager | v1.16.2, `Issuer` auto-signé déclaré dans `k8s/08-tls.yaml` |
+| Images de base | `python:3.13-slim` (les quatre étapes du Dockerfile, et le conteneur jetable du scan pip-audit en CI), `postgres:17-alpine` |
+| Docker | Image applicative `dilane-shop`, étiquetée `0.1.0` dans `docker-compose.yml` et `0.2.0` dans `k8s/04-django.yaml` et `k8s/05-migration-job.yaml` ; image de test `dilane-shop:test`. Les deux étiquettes applicatives désignent aujourd'hui des contenus différents (issue #31). |
+| kind | Série 0.33 — cluster `dilane-shop`, 3 nœuds, Kubernetes série 1.37 |
+| kubectl | Série 1.37 |
+| ingress-nginx | Série 1.15, manifeste `provider/kind`, complété par `k8s/07-ingress-controller-patch.yaml` |
+| cert-manager | Série 1.16, `Issuer` auto-signé déclaré dans `k8s/08-tls.yaml` |
 | StorageClass | `standard` (`rancher.io/local-path`), fournie par kind, `WaitForFirstConsumer` |
-| GitHub Actions | `actions/checkout@v5`, `actions/setup-python@v6` (Python 3.13), runner `ubuntu-latest` |
+| GitHub Actions | `actions/checkout@v7`, runner `ubuntu-24.04`. Aucune autre action : Python et les outils s'exécutent dans des conteneurs. |
 | AWS / Terraform | **Archive.** Provider `hashicorp/aws ~> 5.0`, backend local. Compte fermé, instance supprimée. |
 
 ---
 
 ## 5. Historique — déploiement AWS EC2 (jusqu'au Sprint 9)
 
-> **Cette architecture n'est plus active.** Le compte AWS est fermé, l'instance est supprimée et le job `deploy` de la CI est neutralisé par `if: false` depuis l'issue #23. Les fichiers `infra/terraform/` et `scripts/` sont conservés dans le dépôt à titre documentaire. Le diagramme ci-dessous décrit ce que provisionnait `infra/terraform/` et ce qu'exécutait `bootstrap.sh`, tel qu'écrit dans ces fichiers — y compris leurs incohérences, détaillées en [§5 de l'audit](AUDIT.md) et dans l'[ADR-001](adr/001-conteneurisation.md).
+> **Cette architecture n'est plus active.** Le compte AWS est fermé, l'instance est supprimée. Le job `deploy` de la CI, neutralisé par `if: false` à l'issue #23, a été supprimé au commit `1d37f77`, en même temps que le renommage de `deploy.yml` en `ci.yml` ; il reste consultable dans l'historique Git. Les fichiers `infra/terraform/` et `scripts/` sont conservés dans le dépôt à titre documentaire. Le diagramme ci-dessous décrit ce que provisionnait `infra/terraform/` et ce qu'exécutait `bootstrap.sh`, tel qu'écrit dans ces fichiers — y compris leurs incohérences, détaillées en [§5 de l'audit](AUDIT.md) et dans l'[ADR-001](adr/001-conteneurisation.md).
 
 ```mermaid
 graph TB
@@ -428,7 +496,7 @@ graph TB
 
 ### Points factuels sur ce déploiement
 
-- Le port 443 était ouvert dans le security group, mais `bootstrap.sh` ne génère **aucun bloc `server` en écoute sur 443** et n'installe pas certbot. Aucun HTTPS n'était configuré. La terminaison TLS est désormais assurée par l'Ingress et cert-manager (§3.2).
+- Le port 443 était ouvert dans le security group, mais `bootstrap.sh` ne génère **aucun bloc `server` en écoute sur 443** et n'installe pas certbot. Aucun HTTPS n'était configuré. La terminaison TLS est désormais assurée par l'Ingress et cert-manager (§3.3).
 - `SECURE_PROXY_SSL_HEADER` est toujours positionné en dur dans `settings.py:45`, et reste pertinent derrière l'Ingress.
 - Le state Terraform était local : `versions.tf` ne déclare aucun backend distant.
 - Terraform ne créait pas de base PostgreSQL. La variable `database_url` désignait un hôte supposé déjà existant ; sinon le bootstrap retombait sur SQLite.

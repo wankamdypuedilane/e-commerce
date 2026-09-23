@@ -15,7 +15,7 @@ Ce projet a été construit pour aller au-delà d’une simple application web:
 - PostgreSQL en service séparé
 - Gunicorn et WhiteNoise pour servir l’application et ses fichiers statiques
 - Kubernetes pour l’orchestration : replicas, sondes de santé, mises à jour sans coupure
-- GitHub Actions pour la CI/CD
+- GitHub Actions pour l’intégration continue : scan des dépendances, tests dans l’image, test de fumée du conteneur
 
 ## Fonctionnalités
 
@@ -189,8 +189,8 @@ Les manifestes du répertoire [k8s/](k8s/) déploient la même image que Docker 
 ### Prérequis
 
 - Docker Engine (kind exécute les nœuds du cluster comme des conteneurs)
-- `kubectl` — version utilisée : v1.37.0
-- `kind` — version utilisée : v0.33.0
+- `kubectl` — série utilisée : 1.37
+- `kind` — série utilisée : 0.33
 
 ```bash
 kubectl version --client
@@ -275,7 +275,7 @@ kubectl wait --namespace ingress-nginx \
   --for=condition=ready pod --selector=app.kubernetes.io/component=controller --timeout=180s
 ```
 
-Le correctif [k8s/07-ingress-controller-patch.yaml](k8s/07-ingress-controller-patch.yaml) n'est pas facultatif. Le manifeste `provider/kind` devrait contraindre le contrôleur au nœud portant `ingress-ready=true` ; en v1.15.1, son `nodeSelector` ne contient que `kubernetes.io/os: linux`. Sans le correctif, le contrôleur peut se placer sur un nœud de travail, où les ports 80 et 443 ne sont pas mappés vers l'hôte : le site ne répond pas, alors que tous les pods sont `Running`. Vérifiez le placement :
+Le correctif [k8s/07-ingress-controller-patch.yaml](k8s/07-ingress-controller-patch.yaml) n'est pas facultatif. Le manifeste `provider/kind` devrait contraindre le contrôleur au nœud portant `ingress-ready=true` ; dans la version installée par la commande ci-dessus, son `nodeSelector` ne contient que `kubernetes.io/os: linux`. Sans le correctif, le contrôleur peut se placer sur un nœud de travail, où les ports 80 et 443 ne sont pas mappés vers l'hôte : le site ne répond pas, alors que tous les pods sont `Running`. Vérifiez le placement :
 
 ```bash
 kubectl get pods -n ingress-nginx -o wide
@@ -356,16 +356,22 @@ kind delete cluster --name dilane-shop                # supprimer le cluster
 - `/profil/` commandes de l’utilisateur
 - `/admin/` administration Django
 - `/gestion/` raccourci vers l’administration
+- `/healthz/` état de l’application et de la base, pour les sondes Kubernetes et le test de fumée de la CI
+
+Les pages de confirmation et de retour de paiement exigent une connexion et n’affichent que les commandes de l’utilisateur connecté : la commande d’un autre client répond 404.
 
 ## Structure du projet
 
 ```text
 .
-├── Dockerfile                  # Image multi-stage, utilisateur non-root
-├── docker-compose.yml          # Services web et db, volumes nommés
+├── Dockerfile                  # Étapes builder, base, test et runtime (dernière), utilisateur non-root
+├── docker-compose.yml          # Services web et db, service tests (profil test), volumes nommés
 ├── .dockerignore               # Exclusions de contexte de build
+├── .env.example                # Modèle du fichier .env
+├── .coveragerc                 # Mesure de couverture et seuil minimal
 ├── manage.py
-├── requirements.txt
+├── requirements.txt            # Dépendances d'exécution, versions exactes
+├── requirements-dev.txt        # Dépendances de test (coverage), image de test uniquement
 ├── ecommerce/                  # Configuration Django (settings, urls, wsgi)
 ├── shop/                       # App métier : modèles, vues, services, tests
 ├── templates/                  # Surcharges de gabarits de l'admin
@@ -376,7 +382,9 @@ kind delete cluster --name dilane-shop                # supprimer le cluster
 │   └── sprints/                # Rétrospectives de sprint
 ├── infra/terraform/            # Archive : infrastructure AWS, plus active
 ├── scripts/                    # Archive : sauvegarde et restauration PostgreSQL
-└── .github/workflows/          # Intégration continue
+└── .github/
+    ├── dependabot.yml          # Mises à jour hebdomadaires : pip, image Docker, GitHub Actions
+    └── workflows/              # Workflow CI (ci.yml) et sa documentation
 ```
 
 ## Documentation
@@ -391,6 +399,7 @@ kind delete cluster --name dilane-shop                # supprimer le cluster
 - [docs/sprints/sprint-09-docker.md](docs/sprints/sprint-09-docker.md) — rétrospective du sprint de conteneurisation, décisions techniques et points reportés.
 - [docs/sprints/sprint-10-kubernetes.md](docs/sprints/sprint-10-kubernetes.md) — rétrospective du sprint Kubernetes, diagnostic du placement du contrôleur Ingress et points reportés.
 - [docs/sprints/sprint-11-tests.md](docs/sprints/sprint-11-tests.md) — rétrospective du sprint de tests : webhook Stripe, TVA, authentification, couverture en cliquet.
+- [.github/workflows/README.md](.github/workflows/README.md) — étapes du workflow CI, dans l’ordre.
 - [docs/definition-of-done.md](docs/definition-of-done.md) — critères qu'une tâche doit remplir pour être considérée comme terminée, chacun issu d'un défaut réel du projet.
 
 ## Suivi du projet
@@ -403,7 +412,7 @@ Le backlog est tenu sur GitHub Projects, dans le tableau **Dilane Shop — Roadm
 
 ## Historique : déploiement AWS EC2 (septembre 2026)
 
-Cette architecture n’est plus active — le compte AWS est fermé et le job de déploiement EC2 est neutralisé dans la CI depuis le Sprint 9 ; les trois sections ci-dessous sont conservées à titre documentaire.
+Cette architecture n’est plus active — le compte AWS est fermé ; le job de déploiement EC2, neutralisé au Sprint 9, a été retiré de la CI et reste consultable dans l’historique Git. Les trois sections ci-dessous sont conservées à titre documentaire.
 
 ### Déploiement
 
@@ -451,7 +460,7 @@ Deux scripts existent dans le dépôt:
 
 **Leurs chemins sont obsolètes et ces scripts n’ont jamais fonctionné.** Tous deux attendent le projet dans `/home/ubuntu/ecommerce` (`backup_postgres.sh:4`, `restore_postgres.sh:10`), alors que `bootstrap.sh` l’installait dans `/home/ubuntu/e-commerce`. Le répertoire attendu n’a donc jamais existé sur le serveur : les scripts sortaient sur `Missing env file` avant d’atteindre `pg_dump`. La tâche cron proposée dans [docs/ops-backup.md](docs/ops-backup.md) ne surcharge pas `PROJECT_DIR` et échouait silencieusement.
 
-Il n’existe aujourd’hui aucune procédure de sauvegarde active. Les données de la pile Docker résident dans le volume nommé `postgres_data`. Ce point correspond à la dette 2.5 de [docs/AUDIT.md](docs/AUDIT.md).
+Il n’existe aujourd’hui aucune procédure de sauvegarde active. Les données de la pile Docker résident dans le volume nommé `postgres_data`. Ce point correspond à la dette 2.5 de [docs/AUDIT.md](docs/AUDIT.md), suivie par l’issue #83.
 
 ## Auteur
 

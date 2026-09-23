@@ -1,5 +1,38 @@
 # Historique du projet
 
+> **Note (23/09/2026) — identifiants de commit.**
+>
+> Ce document a été écrit avant la réécriture de l'historique Git de l'issue #13, qui a retiré `db.sqlite3` de tous les commits. Les identifiants cités ci-dessous sont ceux d'**avant** la réécriture : aucun n'appartient plus à la branche `main`, et `git show` ne les retrouve que dans un clone antérieur à la réécriture. Le texte du document n'est pas modifié.
+>
+> Correspondance établie le 23/09/2026 en rapprochant la date, l'auteur et le message de chaque commit. Les 22 commits correspondent un à un :
+>
+> | Cité ici | Sur `main` | Message |
+> |---|---|---|
+> | `3cf1240` | `2d4e972` | Fin de la partie tutoriel : système de panier et confirmation fonctionnels |
+> | `65a84de` | `11b2961` | Authentification |
+> | `ccb80d9` | `6e5c2b0` | Mise en place finale du reset password |
+> | `bab2c4c` | `5f94b93` | stripe |
+> | `ddce133` | `d94b079` | Add CI/CD deploy workflow for EC2 |
+> | `54a0ed3` | `cbec405` | Improve deploy diagnostics for SSH and secrets |
+> | `b144e67` | `ee23212` | test3 |
+> | `351334a` | `fd60bf8` | test4 |
+> | `4323f80` | `ab00aa7` | test5 |
+> | `55333c7` | `0a5f204` | test6 |
+> | `0a33d0d` | `b203d30` | Add critical checkout/auth tests and fix navbar template flow |
+> | `7aa22ee` | `ec2f193` | Add PostgreSQL backup and restore scripts with ops guide |
+> | `b830f65` | `2f04d64` | Add Terraform AWS starter |
+> | `e75041d` | `63585b3` | Delete infra/terraform/terraform.tfvars.example |
+> | `4344d66` | `f21adc3` | Terraform bootstrap + favicon site/admin |
+> | `082507f` | `4601c3e` | Fix navbar template if/endif syntax for CI |
+> | `d33e2a3` | `7174117` | test5 |
+> | `2227103` | `5c493b9` | Revert "test5" |
+> | `52b363d` | `8b56fb8` | Fix admin base template block syntax |
+> | `1b127e5` | `4b7e916` | Fix confirmation email parsing and add HTML fallback |
+> | `3b15062` | `edee7d2` | Fix stock flow: decrement only after Stripe payment confirmation |
+> | `890a472` | `ed22a22` | Fix mes commandes template formatting |
+>
+> Le décompte « 22 commits » et la mention « dernier commit du dépôt » décrivent l'historique au 12/04/2026 ; les commits suivants commencent au 20/09/2026.
+
 Reconstitution à partir de `git log` : **22 commits**, un seul auteur, du **08/04/2026 à 01h12** au **12/04/2026 à 02h49**, soit **4 jours et 1 heure** de développement effectif. Branche unique `main`, historique strictement linéaire (aucune branche, aucun merge).
 
 L'auteur apparaît sous deux identités git : `WANKAM Dypue Dilane Junior` (21 commits, poste local) et `Dypue Dilane Junior WANKAM` (1 commit, `e75041d`, réalisé depuis l'interface web GitHub — c'est une suppression de fichier).
