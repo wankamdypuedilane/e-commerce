@@ -99,3 +99,8 @@ class FormulairesTest(TestCase):
         form = EmailAuthenticationForm(data={"username": "pas-un-email", "password": "x"})
         self.assertFalse(form.is_valid())
         self.assertIn("username", form.errors)
+
+    def test_inscription_exige_un_email(self):
+        form = self.inscription("sans-email", "")
+        self.assertFalse(form.is_valid())
+        self.assertIn("email", form.errors)
