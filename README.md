@@ -159,6 +159,29 @@ docker compose run --rm tests sh -c "coverage run manage.py test && coverage rep
 
 La couverture est mesurée avec les branches : un `if` n'est couvert que si ses deux issues sont testées. Le seuil minimal, défini dans `.coveragerc`, fonctionne comme un cliquet : fixé juste sous le niveau atteint, il empêche toute baisse et sera relevé à mesure que les tests progressent.
 
+## Sécurité des dépendances
+
+Les dépendances sont épinglées à une version exacte : les builds sont reproductibles, mais aucune correction de sécurité n'arrive d'elle-même. Deux mécanismes compensent :
+
+- **pip-audit**, dans la CI, compare les dépendances aux bases de vulnérabilités publiques et fait échouer la CI dès qu'une faille connue est trouvée ;
+- **Dependabot** ouvre chaque semaine des pull requests de mise à jour, testées par la CI avant toute fusion.
+
+Pour scanner en local :
+
+```bash
+docker run --rm -v "$PWD:/src:ro" python:3.13-slim \
+  sh -c "pip install --quiet --root-user-action=ignore pip-audit==2.10.1 && pip-audit -r /src/requirements-dev.txt"
+```
+
+Procédure de mise à jour d'une dépendance vulnérable :
+
+1. Retenir le dernier correctif de la même série, sans changer de version majeure au passage.
+2. Modifier `requirements.txt`, reconstruire les images, puis vérifier la version réellement installée dans l'image.
+3. Lancer la suite de tests et la couverture.
+4. Relancer pip-audit : aucune vulnérabilité ne doit subsister.
+
+Une alerte sans objet pour ce projet peut être ignorée avec `--ignore-vuln`, uniquement accompagnée d'une justification écrite dans le workflow.
+
 ## Déploiement Kubernetes (local, kind)
 
 Les manifestes du répertoire [k8s/](k8s/) déploient la même image que Docker Compose sur un cluster Kubernetes. Le cluster de référence est un cluster local [kind](https://kind.sigs.k8s.io/) à trois nœuds. Le choix de Kubernetes et ses contreparties sont documentés dans [docs/adr/002-kubernetes.md](docs/adr/002-kubernetes.md).

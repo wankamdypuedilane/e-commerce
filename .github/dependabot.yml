@@ -1,0 +1,22 @@
+# Mises à jour proposées automatiquement, sous forme de pull requests.
+# Chacune passe par la CI complète avant toute fusion.
+version: 2
+updates:
+  # Dépendances Python : requirements.txt et requirements-dev.txt
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+
+  # Image de base du Dockerfile : python:3.13-slim
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+
+  # Actions GitHub utilisées par la CI
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"

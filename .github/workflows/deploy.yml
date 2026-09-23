@@ -7,6 +7,7 @@ on:
   push:
     branches:
       - main
+  pull_request:
   workflow_dispatch:
 
 jobs:
@@ -25,6 +26,14 @@ jobs:
           cp .env.example .env
           sed -i "s|^DJANGO_SECRET_KEY=.*|DJANGO_SECRET_KEY=ci-$(openssl rand -hex 32)|" .env
           sed -i "s|^DB_PASSWORD=.*|DB_PASSWORD=ci-$(openssl rand -hex 16)|" .env
+
+      # Scan des dépendances avant toute construction : échec immédiat si une
+      # vulnérabilité connue touche l'application ou ses outils de test.
+      - name: Dependency vulnerability scan
+        run: >
+          docker run --rm -v "$PWD:/src:ro" python:3.13-slim
+          sh -c "pip install --quiet --root-user-action=ignore pip-audit==2.10.1
+          && pip-audit -r /src/requirements-dev.txt"
 
       - name: Build image
         run: docker compose build web tests
