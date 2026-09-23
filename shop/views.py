@@ -235,11 +235,12 @@ def checkout(request):
     })
 
 
+@login_required(login_url='/connexion/')
 def confirmation(request, order_id=None):
     if order_id is None:
-        commande = Commande.objects.order_by('-id').first()
+        commande = Commande.objects.filter(user=request.user).order_by('-id').first()
     else:
-        commande = get_object_or_404(Commande, id=order_id)
+        commande = get_object_or_404(Commande, id=order_id, user=request.user)
 
     if commande and commande.payment_status == 'processing':
         try:
@@ -262,6 +263,7 @@ def confirmation(request, order_id=None):
     })
 
 
+@login_required(login_url='/connexion/')
 def payment_success(request):
     order_id = request.GET.get('order_id')
     session_id = request.GET.get('session_id', '')
@@ -270,7 +272,7 @@ def payment_success(request):
         messages.error(request, "Commande introuvable après paiement.")
         return redirect('home')
 
-    commande = get_object_or_404(Commande, id=order_id)
+    commande = get_object_or_404(Commande, id=order_id, user=request.user)
 
     if stripe_is_configured() and session_id:
         try:
@@ -288,10 +290,11 @@ def payment_success(request):
     return redirect('confirmation_order', order_id=commande.id)
 
 
+@login_required(login_url='/connexion/')
 def payment_cancel(request):
     order_id = request.GET.get('order_id')
     if order_id and str(order_id).isdigit():
-        commande = Commande.objects.filter(id=order_id).first()
+        commande = Commande.objects.filter(id=order_id, user=request.user).first()
         if commande and commande.payment_status in ['pending', 'processing']:
             update_fields = ['payment_status']
             commande.payment_status = 'cancelled'
