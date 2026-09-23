@@ -26,3 +26,9 @@ README.md
 
 # Sauvegardes
 *.bak
+
+# Fichiers d'orchestration et d'intégration continue : inutiles à l'exécution
+k8s/
+Dockerfile
+docker-compose.yml
+.github/
