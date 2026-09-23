@@ -1,5 +1,5 @@
 
-# ---------- Stage 1 : construction des dependances ----------
+# ---------- Étape builder : construction des dépendances ----------
 FROM python:3.13-slim AS builder
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -22,7 +22,7 @@ COPY requirements.txt .
 RUN pip install --upgrade pip && pip install -r requirements.txt
 
 
-# ---------- Stage 2 : image d'execution ----------
+# ---------- Étape base : application prête à l'exécution ----------
 FROM python:3.13-slim AS base
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -41,12 +41,12 @@ RUN groupadd --system django && useradd --system --gid django --home /app django
 WORKDIR /app
 
 COPY --from=builder /opt/venv /opt/venv
-COPY --chown=django:django . .
+# Code copié en tant que root : lisible par django, jamais modifiable par lui.
+COPY . .
 
 # Fichiers statiques collectes a la construction
 RUN SECRET_KEY=build-only DJANGO_SECRET_KEY=build-only \
-    python manage.py collectstatic --noinput \
-    && chown -R django:django /app/staticfiles
+    python manage.py collectstatic --noinput
 
 # Dossier des médias téléversés : le seul emplacement de /app inscriptible
 # par l'application. Créé dans l'image pour que les volumes montés dessus
