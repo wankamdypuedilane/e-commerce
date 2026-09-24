@@ -218,6 +218,32 @@ docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
 
 Une faille sans objet pour ce projet ne s'ignore que dans un fichier `.trivyignore`, identifiant par identifiant (`CVE-…` ou `GHSA-…`), toujours accompagné d'une justification écrite en commentaire. Aucune exception n'existe aujourd'hui, et le dépôt ne contient pas de `.trivyignore`. La CI monte le dépôt dans le conteneur Trivy (`-v "$PWD:/src:ro" -w /src`), comme pour pip-audit et Bandit : un `.trivyignore` placé à la racine y serait lu.
 
+## En-têtes de sécurité HTTP
+
+Chaque réponse porte une politique de sécurité du contenu (CSP), native dans Django 6 et définie par `SECURE_CSP` dans `ecommerce/settings.py`, ainsi qu'un en-tête `Permissions-Policy` posé par `shop/middleware.py`, que Django ne fournit pas. Les protections envoyées par défaut par Django restent en place : `X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy`, `Cross-Origin-Opener-Policy`. Le détail des directives et leur justification figurent dans [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
+- **Scripts** : seuls s'exécutent les fichiers du site, de `cdn.jsdelivr.net` et de `code.jquery.com`, et les scripts en ligne qui portent le jeton de la page. Un script injecté sans ce jeton est bloqué par le navigateur.
+- **Styles** : exception assumée, `'unsafe-inline'` est autorisé. Les jetons ne s'appliquent pas aux attributs `style=` écrits dans le HTML, et une injection de style est bien moins grave qu'une injection de script.
+- **Formulaires** : ils ne peuvent être envoyés qu'au site et à `checkout.stripe.com`, pour la redirection vers le paiement. Cette redirection n'a pas encore été vérifiée avec de vraies clés Stripe.
+- **Strict-Transport-Security** n'est pas envoyé : il est reporté à l'issue #42, avec un certificat reconnu.
+
+**Tout nouveau script en ligne doit porter le jeton**, sans quoi il sera bloqué :
+
+```html
+<script nonce="{{ csp_nonce }}">
+  …
+</script>
+```
+
+Un test de `shop/test_entetes.py` le vérifie sur l'accueil, la fiche produit, la commande et la confirmation : un script sans jeton sur l'une de ces pages fait échouer la CI. Une nouvelle page contenant un script en ligne doit être ajoutée à ce test. Les gestionnaires d'événements écrits dans le HTML (`onclick=`, etc.) ne peuvent pas porter de jeton : ils sont bloqués, à remplacer par un script qui porte le jeton.
+
+**Pour modifier la politique**, repasser par le mode d'observation :
+
+1. Recopier la politique modifiée dans `SECURE_CSP_REPORT_ONLY`, en laissant `SECURE_CSP` inchangé : le navigateur applique l'ancienne politique et signale seulement, dans sa console, ce que la nouvelle bloquerait.
+2. Parcourir toutes les pages, admin comprise, console ouverte, jusqu'à ne plus voir aucune violation.
+3. Reporter la politique dans `SECURE_CSP` et supprimer `SECURE_CSP_REPORT_ONLY`.
+4. Lancer les tests : `shop/test_entetes.py` vérifie que la politique est bien appliquée et non plus seulement observée.
+
 ## Déploiement Kubernetes (local, kind)
 
 Les manifestes du répertoire [k8s/](k8s/) déploient la même image que Docker Compose sur un cluster Kubernetes. Le cluster de référence est un cluster local [kind](https://kind.sigs.k8s.io/) à trois nœuds. Le choix de Kubernetes et ses contreparties sont documentés dans [docs/adr/002-kubernetes.md](docs/adr/002-kubernetes.md).

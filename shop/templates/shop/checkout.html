@@ -144,7 +144,7 @@
   </div>
 </div>
 {% endblock content %} {% block js %}
-<script type="text/javascript">
+<script nonce="{{ csp_nonce }}" type="text/javascript">
   var cartStorageKey = window.cartStorageKey || "panier_guest";
   var panier = JSON.parse(localStorage.getItem(cartStorageKey)) || {};
   var taxRatePercent = parseFloat("{{ tax_rate_percent|default:'20' }}") || 20;

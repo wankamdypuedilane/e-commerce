@@ -7,7 +7,7 @@ Tout ce qui suit décrit le code tel qu'il existe, sans recommandation.
 >
 > **Mise à jour du 23/09/2026.** Intègre le Sprint 11 et ce qui l'a suivi : étape `test` du Dockerfile et service Compose `tests`, mesure de couverture, workflow renommé `CI` (`.github/workflows/ci.yml`) sans job de déploiement, scan pip-audit, Dependabot, contrôle de propriétaire sur les pages de commande, code de l'image non modifiable par l'utilisateur `django` (#84), contexte de build réduit (#64), `.vscode/` retiré du dépôt.
 >
-> **Mise à jour du 24/09/2026.** Analyse statique Bandit ajoutée à la CI, juste après pip-audit et avant la construction des images (issue #36). Son seul constat, `mark_safe` dans `shop/admin.py`, est corrigé par `330c331`. Plus tard le même jour : pip retiré de l'image de production (étape `runtime` du Dockerfile) et scan de vulnérabilités de l'image par Trivy, juste après la construction des images.
+> **Mise à jour du 24/09/2026.** Analyse statique Bandit ajoutée à la CI, juste après pip-audit et avant la construction des images (issue #36). Son seul constat, `mark_safe` dans `shop/admin.py`, est corrigé par `330c331`. Plus tard le même jour : pip retiré de l'image de production (étape `runtime` du Dockerfile) et scan de vulnérabilités de l'image par Trivy, juste après la construction des images. Enfin, en-têtes de sécurité HTTP (issue #38) : politique CSP native de Django avec jeton sur les scripts en ligne, et en-tête `Permissions-Policy` (voir la section « En-têtes de sécurité HTTP », §2).
 
 ---
 
@@ -29,7 +29,7 @@ e-commerce/
 ├── db.sqlite3                    # Présent sur le poste, NON versionné depuis le Sprint 9 (retiré de l'historique)
 │
 ├── ecommerce/                    # Package de configuration Django (projet)
-│   ├── settings.py               # Config unique, pilotée par os.getenv + python-dotenv (254 lignes)
+│   ├── settings.py               # Config unique, pilotée par os.getenv + python-dotenv (281 lignes)
 │   ├── urls.py                   # URLconf racine : admin, reset password admin, include(shop.urls)
 │   ├── wsgi.py                   # Point d'entrée WSGI utilisé par Gunicorn
 │   └── asgi.py                   # Point d'entrée ASGI — présent mais jamais référencé
@@ -41,6 +41,7 @@ e-commerce/
 │   ├── services.py               # Couche métier : Stripe, TVA, email de confirmation (8 fonctions)
 │   ├── forms.py                  # SignupForm (UserCreationForm + email) et EmailAuthenticationForm
 │   ├── backends.py               # EmailOrUsernameModelBackend : login par email OU username
+│   ├── middleware.py             # PermissionsPolicyMiddleware : en-tête Permissions-Policy, absent de Django
 │   ├── admin.py                  # 4 ModelAdmin + inline OrderItem, branding "E-commerce"
 │   ├── apps.py                   # ShopConfig, name='shop' (pas de default_auto_field)
 │   ├── tests.py                  # 9 tests d'origine (modèle, checkout, authentification)
@@ -52,6 +53,7 @@ e-commerce/
 │   ├── test_medias.py            # /app/media inscriptible par l'utilisateur django : 1 test
 │   ├── test_image.py             # Code lisible mais non modifiable par django, dans l'image : 2 tests
 │   ├── test_admin.py             # Échappement des titres dans le panier de l'admin : 2 tests
+│   ├── test_entetes.py           # En-têtes de sécurité HTTP et jeton CSP sur quatre pages : 6 tests
 │   ├── migrations/               # 15 migrations (0001 → 0015), dont 2 data migrations
 │   ├── static/shop/
 │   │   └── favicon.svg           # Unique fichier statique du projet (aucun CSS/JS local)
@@ -140,7 +142,7 @@ e-commerce/
 | `django.contrib.contenttypes` | Django | Dépendance d'`auth` et de l'admin. Pas d'usage direct dans le code métier. |
 | `django.contrib.sessions` | Django | Sessions d'authentification. Backend par défaut (base de données). |
 | `django.contrib.messages` | Django | Utilisé par 7 appels `messages.*` dans `shop/views.py` (succès checkout, connexion, inscription, déconnexion, annulation de paiement, erreurs de retour Stripe). |
-| `django.contrib.staticfiles` | Django | Collecte `shop/static/` vers `STATIC_ROOT = BASE_DIR / 'staticfiles'`. Depuis le Sprint 9, les fichiers sont **servis par WhiteNoise**, pas par Nginx : middleware `whitenoise.middleware.WhiteNoiseMiddleware` en deuxième position (`settings.py:68`) et `STORAGES['staticfiles']` en `CompressedManifestStaticFilesStorage` (`settings.py:195-202`). `collectstatic` est exécuté pendant la construction de l'image. |
+| `django.contrib.staticfiles` | Django | Collecte `shop/static/` vers `STATIC_ROOT = BASE_DIR / 'staticfiles'`. Depuis le Sprint 9, les fichiers sont **servis par WhiteNoise**, pas par Nginx : middleware `whitenoise.middleware.WhiteNoiseMiddleware` en deuxième position (`settings.py:68`) et `STORAGES['staticfiles']` en `CompressedManifestStaticFilesStorage` (`settings.py:198-205`). `collectstatic` est exécuté pendant la construction de l'image. |
 | `shop` | Projet | **Unique app métier.** Porte la totalité du domaine : catalogue, panier côté client, commandes, paiement Stripe, emails, authentification par email. Aucune séparation en sous-apps (pas d'app `orders`, `payments` ou `accounts` distincte). Le découpage en six apps est prévu au Sprint 12, conformément à l'[ADR-003](adr/003-monolithe-modulaire.md). |
 
 ### Découpage interne de `shop`
@@ -174,6 +176,54 @@ La commande d'un autre client répond 404, pas 403 : un 403 confirmerait son exi
 - `503` et `{"status": "degraded", "database": "unreachable"}` sinon.
 
 Elle est sans authentification et sans gabarit : les sondes Kubernetes doivent pouvoir l'appeler avant que le pod ne reçoive du trafic, et le test de fumée de la CI l'interroge pour vérifier que le conteneur de production démarre. C'est la seule vue du projet écrite pour l'infrastructure et non pour un utilisateur.
+
+### En-têtes de sécurité HTTP
+
+Ajoutés à l'issue #38. Tous sont posés par des intergiciels, donc sur **toutes** les réponses : pages du site, admin, API JSON et `/healthz/`.
+
+**Intergiciels, dans l'ordre de `MIDDLEWARE`** (`settings.py:66-77`) :
+
+1. `django.middleware.security.SecurityMiddleware`
+2. `whitenoise.middleware.WhiteNoiseMiddleware`
+3. `django.middleware.csp.ContentSecurityPolicyMiddleware` : CSP native de Django 6, pose l'en-tête à partir de `SECURE_CSP`
+4. `shop.middleware.PermissionsPolicyMiddleware` : intergiciel du projet (`shop/middleware.py`), Django ne fournissant pas cet en-tête ; il ne remplace pas un `Permissions-Policy` déjà posé (`setdefault`)
+5. `django.contrib.sessions.middleware.SessionMiddleware`
+6. `django.middleware.common.CommonMiddleware`
+7. `django.middleware.csrf.CsrfViewMiddleware`
+8. `django.contrib.auth.middleware.AuthenticationMiddleware`
+9. `django.contrib.messages.middleware.MessageMiddleware`
+10. `django.middleware.clickjacking.XFrameOptionsMiddleware`
+
+**Processeur de contexte** : `django.template.context_processors.csp`, ajouté à `TEMPLATES`, fournit `csp_nonce` aux gabarits. Le jeton est tiré au hasard à chaque réponse. Il n'apparaît dans l'en-tête que si un gabarit l'a utilisé : `/healthz/`, qui n'en rend aucun, n'a pas de `'nonce-…'` dans sa politique.
+
+**En-têtes envoyés**, relevés sur `/`, `/admin/login/` et `/healthz/` :
+
+| En-tête | Valeur | Source |
+|---|---|---|
+| `Content-Security-Policy` | voir le tableau suivant | `SECURE_CSP` (`settings.py:266-281`) |
+| `Permissions-Policy` | `camera=(), microphone=(), geolocation=(), usb=(), payment=()` | `shop/middleware.py` |
+| `X-Frame-Options` | `DENY` | `XFrameOptionsMiddleware`, valeur par défaut |
+| `X-Content-Type-Options` | `nosniff` | `SecurityMiddleware`, valeur par défaut |
+| `Referrer-Policy` | `same-origin` | `SecurityMiddleware`, valeur par défaut |
+| `Cross-Origin-Opener-Policy` | `same-origin` | `SecurityMiddleware`, valeur par défaut |
+| `Strict-Transport-Security` | **non envoyé** | `SECURE_HSTS_SECONDS` vaut 0 par défaut (`settings.py:49`) ; reporté à l'issue #42, avec un certificat reconnu. Le certificat actuel est auto-signé, et HSTS rendrait le site inaccessible en cas d'erreur de certificat, sans possibilité de passer outre dans le navigateur. |
+
+**Politique CSP**, appliquée par `SECURE_CSP` et non seulement observée : il n'y a pas d'en-tête `Content-Security-Policy-Report-Only`. Selon le commentaire de `settings.py`, elle a été appliquée après une phase d'observation en mode Report-Only. Aucune directive `report-uri` ou `report-to` n'est déclarée : une violation n'est visible que dans la console du navigateur.
+
+| Directive | Valeur | Justification |
+|---|---|---|
+| `default-src` | `'self'` | Repli pour toute ressource non listée. |
+| `script-src` | `'self'`, jeton, `cdn.jsdelivr.net`, `code.jquery.com` | Scripts verrouillés par jeton : les 6 blocs `<script>` en ligne de `base.html`, `index.html`, `checkout.html` et `confirmation.html` portent `nonce="{{ csp_nonce }}"`. Pas de `'unsafe-inline'` : un script injecté sans le jeton de la page n'est pas exécuté. Les deux domaines sont ceux de Bootstrap, Popper et jQuery (§4.5). |
+| `style-src` | `'self'`, `'unsafe-inline'`, `cdn.jsdelivr.net` | **Exception assumée.** Les jetons ne s'appliquent pas aux attributs `style=` écrits dans le HTML, présents dans `index.html`, `detail.html` et `confirmation.html` ; le bloc `<style>` de `base.html` n'en porte pas non plus. Une injection de style est bien moins grave qu'une injection de script. |
+| `img-src` | `'self'`, `https:`, `data:` | Les images de produits peuvent être des URL externes (`Product.image`). |
+| `font-src` | `'self'`, `cdn.jsdelivr.net` | |
+| `connect-src` | `'self'` | Limité au site, pour la recherche `/api/produits/`. Les cartes sources `.map` de jsDelivr sont bloquées, mais seuls les outils de développement ouverts les demandent, jamais la page d'un visiteur. |
+| `form-action` | `'self'`, `checkout.stripe.com` | Autorise la redirection du formulaire de commande vers la page de paiement Stripe. **Non vérifié en conditions réelles** : les clés Stripe locales sont des valeurs d'exemple, et aucune session de paiement n'a pu être créée. |
+| `frame-ancestors` | `'none'` | Le site ne peut être affiché dans aucun cadre, comme le prévoit déjà `X-Frame-Options: DENY`. |
+| `base-uri` | `'self'` | |
+| `object-src` | `'none'` | |
+
+**Tests** : `shop/test_entetes.py`, 6 tests. L'un d'eux vérifie, sur quatre pages (accueil, fiche produit, commande, confirmation), que chaque script en ligne porte le jeton de la réponse. Vérifié dans les deux sens : les 6 tests passent sur le code actuel ; si l'on retire le jeton du script de `checkout.html`, ce test échoue sur la page « commande ». Le test limité à l'accueil ne l'aurait pas détecté.
 
 ---
 
@@ -374,7 +424,7 @@ Les versions exactes sont épinglées dans `requirements.txt`, seule source de v
 
 | Élément | Valeur observée |
 |---|---|
-| Variables | `STRIPE_PUBLIC_KEY`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` (`settings.py:184-186`) |
+| Variables | `STRIPE_PUBLIC_KEY`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` (`settings.py:187-189`) |
 | Injection | `env_file: .env` sous Docker Compose ; `envFrom: secretRef` sous Kubernetes |
 | Condition d'activation | `stripe_is_configured()` exige le module importé **+** `STRIPE_SECRET_KEY` **+** `STRIPE_PUBLIC_KEY`. `STRIPE_WEBHOOK_SECRET` n'entre pas dans ce test. |
 | Mode | `stripe.checkout.Session.create(mode='payment', payment_method_types=['card'])`, devise `eur` |
@@ -393,10 +443,10 @@ Aucune clé publique Stripe n'est exposée dans les templates : il n'y a pas de 
 
 | Élément | Valeur observée |
 |---|---|
-| Backend | `django.core.mail.backends.smtp.EmailBackend` — en dur, sans bascule console (`settings.py:175`) |
-| Hôte | `smtp-relay.brevo.com`, port `587`, `EMAIL_USE_TLS = True` — tous en dur (`settings.py:176-178`) |
+| Backend | `django.core.mail.backends.smtp.EmailBackend` — en dur, sans bascule console (`settings.py:178`) |
+| Hôte | `smtp-relay.brevo.com`, port `587`, `EMAIL_USE_TLS = True` — tous en dur (`settings.py:179-181`) |
 | Identifiants | `BREVO_SMTP_LOGIN` / `BREVO_SMTP_KEY` par variables d'environnement |
-| Expéditeur | `EMAIL_FROM`, avec pour valeur par défaut codée en dur l'adresse personnelle `wankamdypuedilane@gmail.com` (`settings.py:181`) |
+| Expéditeur | `EMAIL_FROM`, avec pour valeur par défaut codée en dur l'adresse personnelle `wankamdypuedilane@gmail.com` (`settings.py:184`) |
 | Emails envoyés | 1) confirmation de commande (`send_order_confirmation_email`, multipart texte + HTML, `fail_silently=False`) ; 2) réinitialisation de mot de passe utilisateur ; 3) réinitialisation de mot de passe admin |
 | Anti-doublon | Champ `Commande.confirmation_email_sent`, positionné à `True` après envoi |
 | Dépréciation | Django 6.1 déprécie les réglages `EMAIL_*` au profit de `MAILERS` : la configuration actuelle produit des avertissements de dépréciation. Migration suivie par l'issue #82. |
@@ -404,7 +454,7 @@ Aucune clé publique Stripe n'est exposée dans les templates : il n'y a pas de 
 
 ### 4.4 Base de données
 
-`settings.py:99-122` propose deux moteurs, sélectionnés par `DB_ENGINE` :
+`settings.py:102-125` propose deux moteurs, sélectionnés par `DB_ENGINE` :
 
 | Moteur | Condition | Configuration |
 |---|---|---|
@@ -426,8 +476,12 @@ Référencées dans `shop/templates/shop/base.html`, non versionnées dans le d�
 | Ressource | Série | Ligne |
 |---|---|---|
 | Bootstrap CSS | 5.3 — `cdn.jsdelivr.net` | `base.html:15` |
+| jQuery | 4.0 — `code.jquery.com` | `base.html:21` |
+| jQuery « slim » | 3.3 — `code.jquery.com` | `base.html:26` |
 | Popper | 2.11 — `cdn.jsdelivr.net` | `base.html:31` |
 | Bootstrap JS | 5.3 — `cdn.jsdelivr.net` | `base.html:36` |
+
+Chaque balise porte un attribut `integrity` : le navigateur refuse un fichier modifié sur le CDN. **jQuery est chargé deux fois**, dans deux versions : la seconde, chargée après, remplace la première dans `window.$` et `window.jQuery`. Ces deux domaines sont les seuls autorisés en plus du site par la directive `script-src` de la politique CSP (§2).
 
 La feuille de style **Bootstrap Icons n'est pas chargée**, alors qu'une classe `bi bi-check-circle-fill` est utilisée dans `shop/templates/shop/confirmation.html:7`. Cette icône ne s'affiche donc pas. C'est le seul usage de `bi bi-*` du projet.
 

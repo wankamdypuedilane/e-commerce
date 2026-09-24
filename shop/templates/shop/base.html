@@ -171,12 +171,12 @@
       {% block content %}{% endblock content %}
     </div>
   </body>
-  <script type="text/javascript">
+  <script nonce="{{ csp_nonce }}" type="text/javascript">
     window.cartStorageKey =
       "{% if request.user.is_authenticated %}panier_user_{{ request.user.id }}{% else %}panier_guest{% endif %}";
   </script>
   {%block js%} {%endblock%}
-  <script type="text/javascript">
+  <script nonce="{{ csp_nonce }}" type="text/javascript">
     $(document).on("click", ".toggle-password", function () {
       var targetId = $(this).attr("data-target");
       var input = document.getElementById(targetId);
@@ -201,7 +201,7 @@
         .html(isPassword ? eyeSlashIcon : eyeIcon);
     });
   </script>
-  <script type="text/javascript">
+  <script nonce="{{ csp_nonce }}" type="text/javascript">
     (function () {
       if (window.cartPopoverManaged) {
         return;

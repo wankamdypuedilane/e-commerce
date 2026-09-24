@@ -66,6 +66,8 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'whitenoise.middleware.WhiteNoiseMiddleware',
+    'django.middleware.csp.ContentSecurityPolicyMiddleware',
+    'shop.middleware.PermissionsPolicyMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -86,6 +88,7 @@ TEMPLATES = [
                 'django.template.context_processors.request',
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
+                'django.template.context_processors.csp',
             ],
         },
     },
@@ -251,3 +254,28 @@ LOGGING = {
         },
     },
 }
+
+
+# Politique de sécurité du contenu (CSP), native dans Django 6.
+# Les scripts sont verrouillés par un jeton unique par page. Exception
+# assumée pour les styles : les jetons ne s'appliquent pas aux attributs
+# style= écrits dans le HTML, et une injection de style est bien moins
+# grave qu'une injection de script.
+from django.utils.csp import CSP
+
+_POLITIQUE_CSP = {
+    "default-src": [CSP.SELF],
+    "script-src": [CSP.SELF, CSP.NONCE, "https://cdn.jsdelivr.net", "https://code.jquery.com"],
+    "style-src": [CSP.SELF, CSP.UNSAFE_INLINE, "https://cdn.jsdelivr.net"],
+    "img-src": [CSP.SELF, "https:", "data:"],
+    "font-src": [CSP.SELF, "https://cdn.jsdelivr.net"],
+    "connect-src": [CSP.SELF],
+    # Stripe : le formulaire de commande redirige vers la page de paiement
+    "form-action": [CSP.SELF, "https://checkout.stripe.com"],
+    "frame-ancestors": [CSP.NONE],
+    "base-uri": [CSP.SELF],
+    "object-src": [CSP.NONE],
+}
+# Appliquée après une phase d'observation en mode Report-Only, pendant
+# laquelle chaque page a été parcourue sans violation restante.
+SECURE_CSP = _POLITIQUE_CSP
