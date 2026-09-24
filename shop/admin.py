@@ -1,6 +1,6 @@
 from django.contrib import admin
 from .models import Category, Product, Commande, OrderItem
-from django.utils.safestring import mark_safe
+from django.utils.html import format_html_join
 
 admin.site.site_header = "E-commerce"
 admin.site.site_title = "SBC-shop"
@@ -24,13 +24,18 @@ class AdminCommande(admin.ModelAdmin):
 
     def panier_lisible(self, obj):
         order_items = obj.order_items.select_related('product').all()
-        if order_items.exists():
-            res = ""
-            for item in order_items:
-                title = item.product.title if item.product else "Produit supprimé"
-                subtotal = item.price * item.quantity
-                res += f"<b>{title}</b> x{item.quantity} — {subtotal} €<br>"
-            return mark_safe(res)
+        lignes = [
+            (
+                item.product.title if item.product else "Produit supprimé",
+                item.quantity,
+                item.price * item.quantity,
+            )
+            for item in order_items
+        ]
+        if lignes:
+            # format_html_join échappe chaque valeur insérée : un titre de
+            # produit ne peut jamais être interprété comme du HTML.
+            return format_html_join("", "<b>{}</b> x{} — {} €<br>", lignes)
 
         return "Détails indisponibles"
 
