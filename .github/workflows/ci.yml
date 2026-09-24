@@ -35,6 +35,14 @@ jobs:
           sh -c "pip install --quiet --root-user-action=ignore pip-audit==2.10.1
           && pip-audit -r /src/requirements-dev.txt"
 
+      # Analyse statique du code : échec dès qu'un motif dangereux est détecté,
+      # par exemple mark_safe sur une donnée saisie. Migrations et tests exclus.
+      - name: Static analysis
+        run: >
+          docker run --rm -v "$PWD:/src:ro" -w /src python:3.13-slim
+          sh -c "pip install --quiet --root-user-action=ignore bandit==1.9.4
+          && bandit -r shop ecommerce -x '*/migrations/*,*/test*.py'"
+
       - name: Build image
         run: docker compose build web tests
 

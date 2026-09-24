@@ -6,6 +6,8 @@ Tout ce qui suit décrit le code tel qu'il existe, sans recommandation.
 > **Mise à jour du 20/09/2026.** La version précédente de ce document décrivait l'état antérieur au Sprint 9 : base SQLite versionnée, déploiement sur une instance EC2 unique, aucun conteneur. Ce qui concerne AWS a été déplacé en [§5 Historique](#5-historique--déploiement-aws-ec2-jusquau-sprint-9) et n'est plus actif. Les sections 1 à 4 décrivent l'architecture actuelle : Docker Compose en local, Kubernetes pour le déploiement.
 >
 > **Mise à jour du 23/09/2026.** Intègre le Sprint 11 et ce qui l'a suivi : étape `test` du Dockerfile et service Compose `tests`, mesure de couverture, workflow renommé `CI` (`.github/workflows/ci.yml`) sans job de déploiement, scan pip-audit, Dependabot, contrôle de propriétaire sur les pages de commande, code de l'image non modifiable par l'utilisateur `django` (#84), contexte de build réduit (#64), `.vscode/` retiré du dépôt.
+>
+> **Mise à jour du 24/09/2026.** Analyse statique Bandit ajoutée à la CI, juste après pip-audit et avant la construction des images (issue #36). Son seul constat, `mark_safe` dans `shop/admin.py`, est corrigé par `330c331`.
 
 ---
 
@@ -49,6 +51,7 @@ e-commerce/
 │   ├── test_acces_commandes.py   # Contrôle de propriétaire des pages de commande : 8 tests
 │   ├── test_medias.py            # /app/media inscriptible par l'utilisateur django : 1 test
 │   ├── test_image.py             # Code lisible mais non modifiable par django, dans l'image : 2 tests
+│   ├── test_admin.py             # Échappement des titres dans le panier de l'admin : 2 tests
 │   ├── migrations/               # 15 migrations (0001 → 0015), dont 2 data migrations
 │   ├── static/shop/
 │   │   └── favicon.svg           # Unique fichier statique du projet (aucun CSS/JS local)
@@ -322,17 +325,18 @@ graph LR
     DEPB["Dependabot<br/>pip, image Docker, GitHub Actions<br/>chaque semaine"] -->|pull request| REPO
     REPO --> CI["job ci — ubuntu-24.04"]
     CI --> S1["1. scan pip-audit<br/>requirements-dev.txt"]
-    S1 --> S2["2. construction des images<br/>web et tests"]
-    S2 --> S3["3. manage.py check<br/>image web"]
-    S3 --> S4["4. tests + couverture<br/>image tests, PostgreSQL"]
-    S4 --> S5["5. check --deploy<br/>--fail-level ERROR"]
-    S5 --> S6["6. test de fumée<br/>conteneur web, /healthz/"]
+    S1 --> S2["2. analyse statique Bandit<br/>shop et ecommerce"]
+    S2 --> S3["3. construction des images<br/>web et tests"]
+    S3 --> S4["4. manage.py check<br/>image web"]
+    S4 --> S5["5. tests + couverture<br/>image tests, PostgreSQL"]
+    S5 --> S6["6. check --deploy<br/>--fail-level ERROR"]
+    S6 --> S7["7. test de fumée<br/>conteneur web, /healthz/"]
 ```
 
 - **Déclencheurs** : `push` sur `main`, `pull_request` (toutes branches, dont les propositions de Dependabot) et `workflow_dispatch`.
 - **Runner** : `ubuntu-24.04`, épinglé plutôt que `ubuntu-latest`. Une seule action externe : `actions/checkout@v7`. Python n'est pas installé sur le runner : tout s'exécute dans des conteneurs.
 - **Environnement** : `.env` est recopié depuis `.env.example`, avec une `DJANGO_SECRET_KEY` et un `DB_PASSWORD` aléatoires générés à chaque exécution. **Aucun secret GitHub n'est utilisé.**
-- **Ordre des étapes** : scan pip-audit (dans un conteneur `python:3.13-slim` jetable) **avant toute construction** ; `docker compose build web tests` ; démarrage de `db` ; `manage.py check` dans `web` ; `coverage run manage.py test && coverage report` dans `tests`, contre PostgreSQL, avec échec sous le seuil `fail_under` de `.coveragerc` ; `check --deploy --fail-level ERROR` dans `web` ; test de fumée ; arrêt de la pile par `docker compose down -v`, exécuté même en cas d'échec.
+- **Ordre des étapes** : scan pip-audit puis analyse statique Bandit, chacun dans un conteneur `python:3.13-slim` jetable, **avant toute construction** ; `docker compose build web tests` ; démarrage de `db` ; `manage.py check` dans `web` ; `coverage run manage.py test && coverage report` dans `tests`, contre PostgreSQL, avec échec sous le seuil `fail_under` de `.coveragerc` ; `check --deploy --fail-level ERROR` dans `web` ; test de fumée ; arrêt de la pile par `docker compose down -v`, exécuté même en cas d'échec.
 - **Test de fumée** : démarre le vrai conteneur `web`, attend jusqu'à 40 secondes que `/healthz/` réponde, puis échoue si les journaux de démarrage contiennent `[ERROR]`. Les tests passent par le client de test de Django et ne lancent jamais Gunicorn : sans cette étape, une erreur de démarrage passerait inaperçue.
 - **Aucun job de déploiement.** Le futur déploiement Kubernetes fera l'objet d'un workflow distinct (issue #43).
 
@@ -354,11 +358,12 @@ Les versions exactes sont épinglées dans `requirements.txt`, seule source de v
 | `gunicorn` | 26 | Serveur WSGI, lancé par le `CMD` de l'image, interface de contrôle désactivée (`--no-control-socket`). |
 | `whitenoise` | 6 | Sert les fichiers statiques depuis Gunicorn (ajouté au Sprint 9, issue #24). |
 
-**Dépendances de développement** (`requirements-dev.txt`) : le fichier inclut `requirements.txt` (`-r`) et n'ajoute que `coverage` (série 7). Il n'est installé que dans l'étape `test` du Dockerfile, jamais dans l'image de production. Aucun linter ni formateur n'est installé (pas de `ruff`, `black` ni `pytest`).
+**Dépendances de développement** (`requirements-dev.txt`) : le fichier inclut `requirements.txt` (`-r`) et n'ajoute que `coverage` (série 7). Il n'est installé que dans l'étape `test` du Dockerfile, jamais dans l'image de production. Aucun linter ni formateur n'est installé (pas de `ruff`, `black` ni `pytest`). Bandit n'y figure pas non plus : la CI l'installe dans un conteneur jetable.
 
-**Surveillance des dépendances :**
+**Surveillance des dépendances et du code :**
 
 - **pip-audit** tourne dans la CI, avant toute construction, sur `requirements-dev.txt` (donc sur les dépendances d'exécution et de test). La version de pip-audit est épinglée dans la commande du workflow. Toute vulnérabilité connue fait échouer la CI.
+- **Bandit** tourne juste après pip-audit, avant la construction des images, et analyse le code de `shop` et `ecommerce`, migrations et fichiers de test exclus (`-x '*/migrations/*,*/test*.py'`, soit 14 fichiers analysés). Sa version est épinglée dans la commande du workflow. Tout motif détecté fait échouer la CI, quelle que soit sa gravité : aucun seuil n'est passé à Bandit, et le dépôt ne contient ni fichier de configuration Bandit ni commentaire `# nosec`. Son seul constat au moment de l'ajout, `mark_safe` dans `shop/admin.py` (B308, B703), a été corrigé par `330c331` : `panier_lisible` construit désormais son HTML avec `format_html_join`, qui échappe chaque valeur insérée.
 - **Dependabot** (`.github/dependabot.yml`) propose chaque semaine des pull requests pour trois écosystèmes : `pip`, `docker` (image de base du Dockerfile) et `github-actions`. La limite de pull requests ouvertes simultanément est fixée à 5 pour `pip`. Chaque proposition passe par la CI.
 
 ### 4.2 Stripe
@@ -426,7 +431,7 @@ La feuille de style **Bootstrap Icons n'est pas chargée**, alors qu'une classe 
 
 | Élément | Détail |
 |---|---|
-| Images de base | `python:3.13-slim` (les quatre étapes du Dockerfile, et le conteneur jetable du scan pip-audit en CI), `postgres:17-alpine` |
+| Images de base | `python:3.13-slim` (les quatre étapes du Dockerfile, et les conteneurs jetables du scan pip-audit et de l'analyse Bandit en CI), `postgres:17-alpine` |
 | Docker | Image applicative `dilane-shop`, étiquetée `0.1.0` dans `docker-compose.yml` et `0.2.0` dans `k8s/04-django.yaml` et `k8s/05-migration-job.yaml` ; image de test `dilane-shop:test`. Les deux étiquettes applicatives désignent aujourd'hui des contenus différents (issue #31). |
 | kind | Série 0.33 — cluster `dilane-shop`, 3 nœuds, Kubernetes série 1.37 |
 | kubectl | Série 1.37 |

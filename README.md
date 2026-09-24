@@ -182,6 +182,25 @@ Procédure de mise à jour d'une dépendance vulnérable :
 
 Une alerte sans objet pour ce projet peut être ignorée avec `--ignore-vuln`, uniquement accompagnée d'une justification écrite dans le workflow.
 
+## Analyse statique du code
+
+**Bandit** analyse le code de `shop` et `ecommerce`, migrations et fichiers de test exclus, à la recherche de motifs dangereux : `mark_safe` sur une donnée saisie, requête SQL construite par concaténation, secret écrit en dur… Dans la CI, il s'exécute juste après pip-audit et avant la construction des images, et la fait échouer dès qu'un motif est détecté, quelle que soit sa gravité.
+
+Pour analyser en local, avec la même commande que la CI :
+
+```bash
+docker run --rm -v "$PWD:/src:ro" -w /src python:3.13-slim \
+  sh -c "pip install --quiet --root-user-action=ignore bandit==1.9.4 && bandit -r shop ecommerce -x '*/migrations/*,*/test*.py'"
+```
+
+Un faux positif ne s'ignore que ligne par ligne, par un commentaire `# nosec` sur la ligne concernée, toujours accompagné d'une justification écrite qui explique pourquoi le motif est sans danger à cet endroit. Par exemple :
+
+```python
+return mark_safe(html)  # nosec B703 — html ne contient que des constantes du code, aucune donnée saisie
+```
+
+Aucun test Bandit n'est désactivé globalement.
+
 ## Déploiement Kubernetes (local, kind)
 
 Les manifestes du répertoire [k8s/](k8s/) déploient la même image que Docker Compose sur un cluster Kubernetes. Le cluster de référence est un cluster local [kind](https://kind.sigs.k8s.io/) à trois nœuds. Le choix de Kubernetes et ses contreparties sont documentés dans [docs/adr/002-kubernetes.md](docs/adr/002-kubernetes.md).
