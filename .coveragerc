@@ -18,10 +18,10 @@ omit =
 branch = True
 
 [report]
-# Cliquet : fixé juste sous le niveau atteint (74,3 % au 24/09/2026, après la correction de la dette 3.3).
+# Cliquet : fixé juste sous le niveau atteint (75,2 % au 24/09/2026, après les en-têtes de sécurité).
 # La couverture ne peut plus baisser sans faire échouer la CI.
 # À relever à mesure que des tests sont ajoutés, jamais à abaisser.
-fail_under = 74
+fail_under = 75
 precision = 1
 # Affiche les numéros de lignes non couvertes
 show_missing = True

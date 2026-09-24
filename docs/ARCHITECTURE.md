@@ -476,12 +476,13 @@ Référencées dans `shop/templates/shop/base.html`, non versionnées dans le d�
 | Ressource | Série | Ligne |
 |---|---|---|
 | Bootstrap CSS | 5.3 — `cdn.jsdelivr.net` | `base.html:15` |
-| jQuery | 4.0 — `code.jquery.com` | `base.html:21` |
-| jQuery « slim » | 3.3 — `code.jquery.com` | `base.html:26` |
+| jQuery « slim » | 4.0 — `code.jquery.com` | `base.html:26` |
 | Popper | 2.11 — `cdn.jsdelivr.net` | `base.html:31` |
 | Bootstrap JS | 5.3 — `cdn.jsdelivr.net` | `base.html:36` |
 
-Chaque balise porte un attribut `integrity` : le navigateur refuse un fichier modifié sur le CDN. **jQuery est chargé deux fois**, dans deux versions : la seconde, chargée après, remplace la première dans `window.$` et `window.jQuery`. Ces deux domaines sont les seuls autorisés en plus du site par la directive `script-src` de la politique CSP (§2).
+Chaque balise porte un attribut `integrity` : le navigateur refuse un fichier modifié sur le CDN. Ces deux domaines sont les seuls autorisés en plus du site par la directive `script-src` de la politique CSP (§2).
+
+jQuery était chargé deux fois jusqu'au 24/09/2026, en séries 4.0 puis 3.3 « slim » ; la seconde remplaçait la première, si bien que la version réellement exécutée était concernée par CVE-2020-11022 et CVE-2020-11023. Une seule version subsiste, en 4.0 « slim » : le code n'appelle que `on`, `val`, `append`, `closest`, `find` et `attr`, toutes présentes dans cette version. L'empreinte `integrity` a été calculée sur le fichier téléchargé. Le test `shop/test_navigateur.py` vérifie qu'une seule version est chargée et qu'elle n'est pas antérieure à 3.5 : aucun outil de la CI ne surveille les bibliothèques servies par CDN, puisque pip-audit et Trivy analysent le serveur.
 
 La feuille de style **Bootstrap Icons n'est pas chargée**, alors qu'une classe `bi bi-check-circle-fill` est utilisée dans `shop/templates/shop/confirmation.html:7`. Cette icône ne s'affiche donc pas. C'est le seul usage de `bi bi-*` du projet.
 
