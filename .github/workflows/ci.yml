@@ -46,6 +46,15 @@ jobs:
       - name: Build image
         run: docker compose build web tests
 
+      # Scan de l'image de production construite : paquets du système et
+      # paquets Python. Échec sur toute faille grave disposant d'un correctif.
+      - name: Image vulnerability scan
+        run: >
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock
+          -v "$PWD:/src:ro" -w /src
+          aquasec/trivy:0.74.0 image --scanners vuln --severity HIGH,CRITICAL
+          --ignore-unfixed --exit-code 1 dilane-shop:0.1.0
+
       - name: Start database
         run: docker compose up -d --wait db
 

@@ -15,7 +15,7 @@ Ce projet a été construit pour aller au-delà d’une simple application web:
 - PostgreSQL en service séparé
 - Gunicorn et WhiteNoise pour servir l’application et ses fichiers statiques
 - Kubernetes pour l’orchestration : replicas, sondes de santé, mises à jour sans coupure
-- GitHub Actions pour l’intégration continue : scan des dépendances, tests dans l’image, test de fumée du conteneur
+- GitHub Actions pour l’intégration continue : scan des dépendances, analyse statique, scan de l’image, tests dans l’image, test de fumée du conteneur
 
 ## Fonctionnalités
 
@@ -200,6 +200,23 @@ return mark_safe(html)  # nosec B703 — html ne contient que des constantes du 
 ```
 
 Aucun test Bandit n'est désactivé globalement.
+
+## Sécurité de l'image
+
+**Trivy** analyse l'image de production une fois construite : paquets du système Debian et paquets Python. Dans la CI, il s'exécute juste après la construction des images et la fait échouer dès qu'il trouve une faille grave ou critique (`HIGH`, `CRITICAL`) disposant d'un correctif. Les failles sans correctif publié sont ignorées : aucune mise à jour ne permettrait de les supprimer.
+
+Pour analyser en local, avec les mêmes options que la CI, après avoir construit l'image :
+
+```bash
+docker compose build web
+docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+  aquasec/trivy:0.74.0 image --scanners vuln --severity HIGH,CRITICAL \
+  --ignore-unfixed --exit-code 1 dilane-shop:0.1.0
+```
+
+**pip est absent de l'image de production.** L'application n'installe jamais de paquet à l'exécution. L'étape `runtime` du Dockerfile désinstalle donc pip, du virtualenv comme du Python système : il n'offrirait qu'un outil d'installation à un attaquant, et les bibliothèques qu'il embarque dans `pip/_vendor` portaient deux failles graves (`msgpack`, `setuptools`), présentes dans l'image uniquement sous cette forme. L'image de test conserve pip, qui y installe `coverage` : elle n'est jamais déployée ni analysée par Trivy.
+
+Une faille sans objet pour ce projet ne s'ignore que dans un fichier `.trivyignore`, identifiant par identifiant (`CVE-…` ou `GHSA-…`), toujours accompagné d'une justification écrite en commentaire. Aucune exception n'existe aujourd'hui, et le dépôt ne contient pas de `.trivyignore`. La CI monte le dépôt dans le conteneur Trivy (`-v "$PWD:/src:ro" -w /src`), comme pour pip-audit et Bandit : un `.trivyignore` placé à la racine y serait lu.
 
 ## Déploiement Kubernetes (local, kind)
 

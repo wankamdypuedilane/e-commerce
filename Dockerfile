@@ -83,3 +83,11 @@ USER django
 # Doit rester la dernière : c'est celle que Docker construit par défaut,
 # sans --target, notamment pour Kubernetes.
 FROM base AS runtime
+# pip retiré de l'image de production : l'application n'installe jamais de
+# paquet à l'exécution. Sa présence n'offrirait qu'un outil d'installation à
+# un attaquant, et les failles des bibliothèques qu'il embarque (Trivy).
+# L'étape test, qui installe coverage, le conserve.
+USER root
+RUN /opt/venv/bin/python -m pip uninstall --yes --quiet pip \
+    && /usr/local/bin/python -m pip uninstall --yes --quiet --root-user-action=ignore pip
+USER django

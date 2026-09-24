@@ -10,15 +10,17 @@ request (dont celles de Dependabot) et à la demande. Il ne déploie rien.
 2. **Analyse statique** avec Bandit, dans un conteneur jetable, sur `shop` et
    `ecommerce`, migrations et fichiers de test exclus : échec dès qu'un motif
    dangereux est détecté.
-3. **Construction** de l'image de production et de l'image de test, puis
-   démarrage de PostgreSQL.
-4. **Vérification de configuration** : `manage.py check` dans l'image de
-   production.
-5. **Tests dans l'image de test**, sur PostgreSQL, avec mesure de couverture
+3. **Construction** de l'image de production et de l'image de test.
+4. **Scan de l'image de production** avec Trivy, dans un conteneur jetable :
+   paquets du système et paquets Python, échec dès qu'une faille HIGH ou
+   CRITICAL disposant d'un correctif est trouvée.
+5. **Démarrage de PostgreSQL**, puis **vérification de configuration** :
+   `manage.py check` dans l'image de production.
+6. **Tests dans l'image de test**, sur PostgreSQL, avec mesure de couverture
    et seuil minimal défini dans `.coveragerc`.
-6. **Vérification de déploiement** : `manage.py check --deploy
+7. **Vérification de déploiement** : `manage.py check --deploy
    --fail-level ERROR` dans l'image de production.
-7. **Test de fumée** : démarrage du vrai conteneur de production, attente de
+8. **Test de fumée** : démarrage du vrai conteneur de production, attente de
    `/healthz/`, échec si les journaux de démarrage contiennent une erreur.
 
 La pile est arrêtée et ses volumes supprimés à la fin, même en cas d'échec.
