@@ -8,6 +8,8 @@ Tout ce qui suit décrit le code tel qu'il existe, sans recommandation.
 > **Mise à jour du 23/09/2026.** Intègre le Sprint 11 et ce qui l'a suivi : étape `test` du Dockerfile et service Compose `tests`, mesure de couverture, workflow renommé `CI` (`.github/workflows/ci.yml`) sans job de déploiement, scan pip-audit, Dependabot, contrôle de propriétaire sur les pages de commande, code de l'image non modifiable par l'utilisateur `django` (#84), contexte de build réduit (#64), `.vscode/` retiré du dépôt.
 >
 > **Mise à jour du 24/09/2026.** Analyse statique Bandit ajoutée à la CI, juste après pip-audit et avant la construction des images (issue #36). Son seul constat, `mark_safe` dans `shop/admin.py`, est corrigé par `330c331`. Plus tard le même jour : pip retiré de l'image de production (étape `runtime` du Dockerfile) et scan de vulnérabilités de l'image par Trivy, juste après la construction des images. Enfin, en-têtes de sécurité HTTP (issue #38) : politique CSP native de Django avec jeton sur les scripts en ligne, et en-tête `Permissions-Policy` (voir la section « En-têtes de sécurité HTTP », §2).
+>
+> **Mise à jour du 25/09/2026.** Secrets Kubernetes versionnés chiffrés avec SOPS et age, selon l'[ADR-004](adr/004-gestion-des-secrets.md) : `.sops.yaml`, `k8s/02-secrets.sops.yaml`, `k8s/02-secrets.example.yaml` réduit à un aide-mémoire, secrets en clair exclus par `.gitignore` (§3.3).
 
 ---
 
@@ -25,7 +27,8 @@ e-commerce/
 ├── README.md                     # Documentation projet
 ├── .env                          # Secrets locaux, ignoré par git, absent de l'image
 ├── .env.example                  # Gabarit des 26 variables d'environnement
-├── .gitignore                    # Ignore .env, __pycache__, *.pyc, *.sqlite3, staticfiles/, media/, .venv/, .vscode/, tfstate
+├── .gitignore                    # Ignore .env, __pycache__, *.pyc, *.sqlite3, staticfiles/, media/, .venv/, .vscode/, tfstate, secrets en clair
+├── .sops.yaml                    # Règle SOPS : fichiers k8s/*.sops.yaml, chiffrement de data et stringData, clé publique age
 ├── db.sqlite3                    # Présent sur le poste, NON versionné depuis le Sprint 9 (retiré de l'historique)
 │
 ├── ecommerce/                    # Package de configuration Django (projet)
@@ -73,7 +76,8 @@ e-commerce/
 │   ├── kind-cluster.yaml         # Cluster local 3 nœuds : 1 control-plane + 2 workers
 │   ├── 00-namespace.yaml         # Namespace dilane-shop
 │   ├── 01-configmap.yaml         # 12 clés de configuration non sensible
-│   ├── 02-secrets.example.yaml   # MODÈLE sans valeur — le Secret réel n'est jamais versionné
+│   ├── 02-secrets.sops.yaml      # Secret dilane-shop-secrets, 8 clés : valeurs chiffrées par SOPS, noms en clair
+│   ├── 02-secrets.example.yaml   # Aide-mémoire en commentaires, aucun objet : édition et application du Secret chiffré
 │   ├── 03-postgres.yaml          # Service headless + StatefulSet + volumeClaimTemplates 2 Gi
 │   ├── 04-django.yaml            # Service ClusterIP + Deployment 2 replicas, probes, maxUnavailable 0
 │   ├── 05-migration-job.yaml     # Job django-migrate, hors du cycle de vie des pods web
@@ -111,7 +115,8 @@ e-commerce/
     ├── adr/
     │   ├── 001-conteneurisation.md
     │   ├── 002-kubernetes.md
-    │   └── 003-monolithe-modulaire.md
+    │   ├── 003-monolithe-modulaire.md
+    │   └── 004-gestion-des-secrets.md
     └── sprints/
         ├── sprint-09-docker.md
         ├── sprint-10-kubernetes.md
@@ -324,7 +329,7 @@ graph TB
             PG["StatefulSet postgres-0<br/>postgres:17-alpine<br/>PGDATA=/var/lib/postgresql/data/pgdata"]
             PVC[("PVC donnees-postgres-0<br/>2 Gi, StorageClass standard")]
             CFG["ConfigMap dilane-shop-config<br/>12 clés non sensibles"]
-            SEC["Secret dilane-shop-secrets<br/>8 clés, créé par kubectl<br/>base64, non chiffré"]
+            SEC["Secret dilane-shop-secrets<br/>8 clés, déchiffré par sops au déploiement<br/>base64, non chiffré dans le cluster"]
             TLS["Certificate dilane-shop-tls<br/>Issuer selfSigned<br/>90 j, renouvellement à 15 j"]
         end
     end
@@ -362,7 +367,8 @@ Points factuels sur ce déploiement :
 
 - **Les migrations passent par un Job**, pas au démarrage des pods : avec deux replicas, plusieurs `migrate` s'exécuteraient en parallèle sur la même base.
 - **Aucune image n'est téléchargée depuis un registre.** `imagePullPolicy: IfNotPresent` et `kind load docker-image` : l'image reste locale. Un déploiement distant exigera un registre, ce qui n'est pas fait.
-- **Les secrets ne sont pas écrits sur le disque de l'hôte**, mais un Secret Kubernetes est encodé en base64, pas chiffré. Une commande `kubectl` suffit à lire une valeur en clair.
+- **Les secrets sont versionnés chiffrés, et déchiffrés au déploiement** ([ADR-004](adr/004-gestion-des-secrets.md)). `k8s/02-secrets.sops.yaml` est un manifeste `Secret` dont seules les valeurs sous `stringData` sont chiffrées par SOPS, avec une clé age ; les noms des huit clés, `metadata` et `type` restent lisibles. La règle est dans `.sops.yaml` : elle s'applique aux fichiers `k8s/*.sops.yaml`, limite le chiffrement à `data` et `stringData` et désigne la clé publique age. La clé privée vit hors du dépôt, dans `~/.config/sops/age/keys.txt`. `sops --decrypt k8s/02-secrets.sops.yaml | kubectl apply -f -` reconstitue le Secret sans écrire de fichier en clair sur le disque. `.gitignore` exclut les fichiers de secrets en clair (`k8s/*-secrets.yaml`, `k8s/secrets*.yaml`, `*.dec.yaml`). La CI ne déchiffre rien : elle génère ses propres valeurs.
+- **Une fois appliqué, le Secret reste encodé en base64, pas chiffré.** Une commande `kubectl` suffit à lire une valeur en clair dans le cluster. Le chiffrement au repos du cluster n'est pas activé (issue #39).
 - **Le certificat est auto-signé.** Let's Encrypt ne peut pas valider `dilane-shop.local`, qui n'existe que dans le fichier `hosts` du poste. La durée (90 jours) et la fenêtre de renouvellement (15 jours) reprennent celles de Let's Encrypt pour que la bascule ne change que l'`issuerRef`.
 - **Le placement du contrôleur Ingress est corrigé par un manifeste du dépôt.** Le manifeste `provider/kind` de la série 1.15, dans la version installée par le README, ne contraint pas le contrôleur au nœud portant `ingress-ready=true` : son `nodeSelector` ne contient que `kubernetes.io/os: linux`. Sans le correctif, le pod peut se placer sur un worker, où les ports 80 et 443 ne sont pas mappés.
 - **Le déploiement n'est pas automatisé.** Aucun workflow ne déploie : l'image est construite et chargée à la main (`kind load docker-image`). La publication de l'image dans un registre depuis la CI est suivie par l'issue #43.

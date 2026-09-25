@@ -283,26 +283,15 @@ kind load docker-image dilane-shop:0.2.0 --name dilane-shop
 
 ### 3. Créer le namespace, le Secret et la configuration
 
-Le Secret n'est jamais versionné : seul le modèle commenté [k8s/02-secrets.example.yaml](k8s/02-secrets.example.yaml) l'est. Créez-le avec `kubectl`, après le namespace et avant tout le reste — PostgreSQL comme Django y lisent leurs variables au démarrage.
+Le Secret est versionné chiffré dans [k8s/02-secrets.sops.yaml](k8s/02-secrets.sops.yaml). Appliquez-le après le namespace et avant tout le reste : PostgreSQL comme Django y lisent leurs variables au démarrage. Il faut sops, age et la clé privée age sur le poste : voir [Secrets (SOPS et age)](#secrets-sops-et-age).
 
 ```bash
 kubectl apply -f k8s/00-namespace.yaml
-
-kubectl create secret generic dilane-shop-secrets \
-  --namespace dilane-shop \
-  --from-literal=DJANGO_SECRET_KEY="$(python3 -c 'import secrets; print(secrets.token_urlsafe(50))')" \
-  --from-literal=DB_PASSWORD="..." \
-  --from-literal=STRIPE_PUBLIC_KEY="pk_test_..." \
-  --from-literal=STRIPE_SECRET_KEY="sk_test_..." \
-  --from-literal=STRIPE_WEBHOOK_SECRET="whsec_..." \
-  --from-literal=BREVO_SMTP_LOGIN="..." \
-  --from-literal=BREVO_SMTP_KEY="..." \
-  --from-literal=EMAIL_FROM="..."
-
+sops --decrypt k8s/02-secrets.sops.yaml | kubectl apply -f -
 kubectl apply -f k8s/01-configmap.yaml
 ```
 
-Un Secret Kubernetes est **encodé en base64, pas chiffré**. Quiconque peut lire les Secrets du namespace peut lire les valeurs en clair. Voir la conséquence correspondante dans [docs/adr/002-kubernetes.md](docs/adr/002-kubernetes.md).
+Une fois appliqué, un Secret Kubernetes est **encodé en base64, pas chiffré**. Quiconque peut lire les Secrets du namespace peut lire les valeurs en clair. Voir la conséquence correspondante dans [docs/adr/002-kubernetes.md](docs/adr/002-kubernetes.md).
 
 ### 4. Appliquer les manifestes applicatifs, dans l'ordre
 
@@ -404,6 +393,103 @@ kubectl delete namespace dilane-shop                  # tout supprimer, sauf le 
 kind delete cluster --name dilane-shop                # supprimer le cluster
 ```
 
+## Secrets (SOPS et age)
+
+Les huit secrets du cluster sont versionnés dans [k8s/02-secrets.sops.yaml](k8s/02-secrets.sops.yaml), chiffrés avec [SOPS](https://github.com/getsops/sops) et une clé [age](https://github.com/FiloSottile/age). La décision et ses alternatives sont dans [docs/adr/004-gestion-des-secrets.md](docs/adr/004-gestion-des-secrets.md).
+
+- **Seules les valeurs sont chiffrées.** Les noms des clés et la structure du manifeste restent lisibles : la règle `encrypted_regex: '^(data|stringData)$'` de [.sops.yaml](.sops.yaml) ne chiffre que ce qui se trouve sous `data` et `stringData`.
+- **La clé publique** figure dans `.sops.yaml`. Elle n'est pas secrète et sert à chiffrer.
+- **La clé privée** vit dans `~/.config/sops/age/keys.txt`, emplacement par défaut où sops la cherche. Elle n'est **jamais versionnée**, et elle seule permet de déchiffrer.
+- Les fichiers de secrets en clair sont ignorés par `.gitignore` (`k8s/*-secrets.yaml`, `k8s/secrets*.yaml`, `*.dec.yaml`). Seuls les fichiers `*.sops.yaml`, chiffrés, sont versionnés.
+- `DJANGO_SECRET_KEY` et `DB_PASSWORD` contiennent des valeurs générées aléatoirement. Les valeurs Stripe et Brevo sont des marqueurs `a_remplacer`, à remplacer par de vraies clés avant tout paiement ou envoi d'email.
+
+> **La perte de la clé privée rend tous les secrets chiffrés illisibles.** Il n'existe aucun moyen de les récupérer : il faudrait régénérer chaque valeur auprès de Stripe, de Brevo et de PostgreSQL, puis tout chiffrer de nouveau. Deux copies de sauvegarde de la clé sont conservées hors du poste de développement. La procédure de restauration figure plus bas.
+
+### Installer sops et age
+
+Versions de référence : sops v3.13.3 et age v1.3.2, publiées pour `amd64` et `arm64`. Remplacez `amd64` par `arm64` sur une machine ARM, comme la VM Azure prévue.
+
+```bash
+ARCH=amd64
+
+curl -fsSLO https://github.com/getsops/sops/releases/download/v3.13.3/sops-v3.13.3.linux.$ARCH
+curl -fsSLO https://github.com/getsops/sops/releases/download/v3.13.3/sops-v3.13.3.checksums.txt
+sha256sum --ignore-missing -c sops-v3.13.3.checksums.txt
+install -m 755 sops-v3.13.3.linux.$ARCH ~/.local/bin/sops
+
+curl -fsSLO https://github.com/FiloSottile/age/releases/download/v1.3.2/age-v1.3.2-linux-$ARCH.tar.gz
+tar -xzf age-v1.3.2-linux-$ARCH.tar.gz
+install -m 755 age/age age/age-keygen ~/.local/bin/
+
+sops --version
+age --version
+```
+
+`sha256sum` doit afficher `OK` pour le binaire sops avant son installation.
+
+### Appliquer les secrets au cluster
+
+```bash
+sops --decrypt k8s/02-secrets.sops.yaml | kubectl apply -f -
+```
+
+Le fichier est déchiffré vers la sortie standard et transmis directement à `kubectl` : aucune copie en clair n'est écrite sur le disque. **N'appliquez jamais `k8s/02-secrets.sops.yaml` directement** avec `kubectl apply -f` : il contient les valeurs chiffrées et un bloc `sops` que Kubernetes ne connaît pas.
+
+Les variables d'environnement d'un pod sont lues à son démarrage. Après un changement de valeur, redémarrez les pods qui la consomment :
+
+```bash
+kubectl rollout restart -n dilane-shop deploy/django
+```
+
+### Modifier un secret
+
+```bash
+sops k8s/02-secrets.sops.yaml
+```
+
+sops déchiffre le fichier dans l'éditeur défini par `$EDITOR`, puis le rechiffre à l'enregistrement. Aucune copie en clair ne reste sur le disque. Appliquez ensuite au cluster, comme ci-dessus.
+
+`DB_PASSWORD` fait exception : PostgreSQL ne lit `POSTGRES_PASSWORD` qu'à l'initialisation d'un volume vide. Changer la valeur du Secret ne change pas le mot de passe d'une base existante : il faut aussi le modifier dans PostgreSQL, sans quoi Django ne pourra plus s'y connecter.
+
+### Ajouter une nouvelle clé
+
+1. Ouvrir le fichier avec `sops k8s/02-secrets.sops.yaml` et ajouter la ligne sous `stringData`. La règle de `.sops.yaml` la chiffre à l'enregistrement.
+2. Appliquer au cluster et redémarrer les pods. Le Deployment `django` et le Job de migration reçoivent **toutes** les clés du Secret par `envFrom` : aucun manifeste à modifier. PostgreSQL, lui, ne lit que `DB_PASSWORD`.
+3. Ajouter la variable, sans valeur réelle, à `.env.example`, pour que la pile Docker Compose et la CI la connaissent aussi.
+4. Vérifier que le nom apparaît en clair et la valeur sous forme `ENC[…]` dans `git diff k8s/02-secrets.sops.yaml` avant de commiter.
+
+### Restaurer la clé age depuis une sauvegarde
+
+À suivre sur un poste neuf, ou si `~/.config/sops/age/keys.txt` a été perdu. `/chemin/vers/sauvegarde/keys.txt` désigne la copie de sauvegarde.
+
+1. **Vérifier que la sauvegarde est la bonne clé**, avant de l'installer. La clé publique qu'elle produit doit être exactement celle de `.sops.yaml` :
+
+   ```bash
+   age-keygen -y /chemin/vers/sauvegarde/keys.txt
+   grep 'age:' .sops.yaml
+   ```
+
+2. **Installer la clé** à l'emplacement attendu par sops, lisible par son seul propriétaire :
+
+   ```bash
+   mkdir -p ~/.config/sops/age
+   chmod 700 ~/.config/sops/age
+   install -m 600 /chemin/vers/sauvegarde/keys.txt ~/.config/sops/age/keys.txt
+   ```
+
+3. **Vérifier le déchiffrement**, sans afficher les valeurs :
+
+   ```bash
+   sops --decrypt k8s/02-secrets.sops.yaml > /dev/null
+   echo "code de sortie : $?"
+   ```
+
+   Le code de sortie doit valoir `0`. Toute autre valeur signifie que la clé ne permet pas de déchiffrer le fichier.
+
+4. **Rétablir deux sauvegardes.** Si l'une des copies a servi à la restauration ou a été perdue, en refaire une à partir de la clé installée, pour en conserver deux hors du poste.
+
+Refaire l'étape 1 sur chaque copie de sauvegarde à intervalle régulier : une sauvegarde jamais vérifiée ne garantit pas la restauration.
+
 ## Routes principales
 
 - `/` accueil
@@ -431,6 +517,7 @@ Les pages de confirmation et de retour de paiement exigent une connexion et n’
 ├── .dockerignore               # Exclusions de contexte de build
 ├── .env.example                # Modèle du fichier .env
 ├── .coveragerc                 # Mesure de couverture et seuil minimal
+├── .sops.yaml                  # Règle de chiffrement SOPS et clé publique age
 ├── manage.py
 ├── requirements.txt            # Dépendances d'exécution, versions exactes
 ├── requirements-dev.txt        # Dépendances de test (coverage), image de test uniquement
@@ -438,7 +525,7 @@ Les pages de confirmation et de retour de paiement exigent une connexion et n’
 ├── shop/                       # App métier : modèles, vues, services, tests
 ├── templates/                  # Surcharges de gabarits de l'admin
 ├── fixtures/                   # Données de démonstration (loaddata)
-├── k8s/                        # Manifestes Kubernetes et configuration kind
+├── k8s/                        # Manifestes Kubernetes, Secret chiffré (SOPS) et configuration kind
 ├── docs/
 │   ├── adr/                    # Décisions d'architecture
 │   └── sprints/                # Rétrospectives de sprint
@@ -458,6 +545,7 @@ Les pages de confirmation et de retour de paiement exigent une connexion et n’
 - [docs/adr/001-conteneurisation.md](docs/adr/001-conteneurisation.md) — décision de conteneuriser l’application et de séparer PostgreSQL, avec ses conséquences.
 - [docs/adr/002-kubernetes.md](docs/adr/002-kubernetes.md) — décision de déployer sur Kubernetes plutôt que sur un serveur unique, alternatives chiffrées (AKS, VPS, EKS/GKE) et critères de révision.
 - [docs/adr/003-monolithe-modulaire.md](docs/adr/003-monolithe-modulaire.md) — choix d’un monolithe modulaire plutôt que de microservices, et critères de révision.
+- [docs/adr/004-gestion-des-secrets.md](docs/adr/004-gestion-des-secrets.md) — secrets chiffrés dans le dépôt avec SOPS et age, alternatives écartées et protection de la clé privée.
 - [docs/sprints/sprint-09-docker.md](docs/sprints/sprint-09-docker.md) — rétrospective du sprint de conteneurisation, décisions techniques et points reportés.
 - [docs/sprints/sprint-10-kubernetes.md](docs/sprints/sprint-10-kubernetes.md) — rétrospective du sprint Kubernetes, diagnostic du placement du contrôleur Ingress et points reportés.
 - [docs/sprints/sprint-11-tests.md](docs/sprints/sprint-11-tests.md) — rétrospective du sprint de tests : webhook Stripe, TVA, authentification, couverture en cliquet.

@@ -34,3 +34,4 @@ docker-compose.yml
 .github/
 .env.example
 .dockerignore
+.sops.yaml

@@ -1,0 +1,12 @@
+# Configuration SOPS — voir docs/adr/004-gestion-des-secrets.md
+#
+# Seules les valeurs sous "data" et "stringData" sont chiffrées : les noms
+# des clés et la structure du manifeste restent lisibles, ce qui garde les
+# fichiers relisibles en revue.
+#
+# La clé publique ci-dessous n'est pas secrète. La clé privée correspondante
+# vit dans ~/.config/sops/age/keys.txt et n'est jamais versionnée.
+creation_rules:
+  - path_regex: k8s/.*\.sops\.yaml$
+    encrypted_regex: '^(data|stringData)$'
+    age: age18tf4g52kmdt6v67lfql5nr02ypjy9pn0sv0349wsmepn9f2kkfhq36nrqd

@@ -11,3 +11,8 @@ staticfiles/
 media/
 .venv/
 .vscode/
+
+# Secrets en clair : seuls les fichiers *.sops.yaml, chiffrés, sont versionnés
+k8s/*-secrets.yaml
+k8s/secrets*.yaml
+*.dec.yaml
