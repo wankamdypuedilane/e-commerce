@@ -654,6 +654,7 @@ Les pages de confirmation et de retour de paiement exigent une connexion et n’
 - [docs/sprints/sprint-11-tests.md](docs/sprints/sprint-11-tests.md) — rétrospective du sprint de tests : webhook Stripe, TVA, authentification, couverture en cliquet.
 - [.github/workflows/README.md](.github/workflows/README.md) — étapes du workflow CI, dans l’ordre.
 - [docs/definition-of-done.md](docs/definition-of-done.md) — critères qu'une tâche doit remplir pour être considérée comme terminée, chacun issu d'un défaut réel du projet.
+- [docs/deploiement-production.md](docs/deploiement-production.md) — procédure reproductible du déploiement sur VPS, du serveur nu au site en HTTPS.
 
 ## Suivi du projet
 
