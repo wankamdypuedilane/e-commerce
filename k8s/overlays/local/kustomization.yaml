@@ -1,0 +1,27 @@
+# Environnement local — cluster kind a trois noeuds.
+#
+# Reproduit le comportement d'avant le passage a Kustomize : image
+# dilane-shop:0.2.0 chargee dans les noeuds par "kind load docker-image",
+# domaine dilane-shop.local, certificat auto-signe.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../../base
+  - tls.yaml
+
+# Etiquette de l'image locale. Le nom logique "dilane-shop" vient de la base.
+images:
+  - name: dilane-shop
+    newTag: 0.2.0
+
+patches:
+  # Domaine local, dans la regle et dans la section TLS de l'Ingress.
+  - path: patch-ingress.yaml
+    target:
+      kind: Ingress
+      name: dilane-shop
+  # Hotes autorises et origines de confiance CSRF pour ce domaine.
+  - path: patch-configmap.yaml
+  # Politique de telechargement de l'image, pour le Deployment et le Job.
+  - path: patch-images.yaml

@@ -244,9 +244,45 @@ Un test de `shop/test_entetes.py` le vérifie sur l'accueil, la fiche produit, l
 3. Reporter la politique dans `SECURE_CSP` et supprimer `SECURE_CSP_REPORT_ONLY`.
 4. Lancer les tests : `shop/test_entetes.py` vérifie que la politique est bien appliquée et non plus seulement observée.
 
-## Déploiement Kubernetes (local, kind)
+## Déploiement Kubernetes
 
-Les manifestes du répertoire [k8s/](k8s/) déploient la même image que Docker Compose sur un cluster Kubernetes. Le cluster de référence est un cluster local [kind](https://kind.sigs.k8s.io/) à trois nœuds. Le choix de Kubernetes et ses contreparties sont documentés dans [docs/adr/002-kubernetes.md](docs/adr/002-kubernetes.md).
+Les manifestes du répertoire [k8s/](k8s/) déploient la même image que Docker Compose sur un cluster Kubernetes. Le choix de Kubernetes et ses contreparties sont documentés dans [docs/adr/002-kubernetes.md](docs/adr/002-kubernetes.md).
+
+### Structure des manifestes
+
+Les manifestes sont organisés avec [Kustomize](https://kustomize.io/), en une base et deux surcouches — le vocabulaire de Kustomize parle d'*overlays* :
+
+```text
+k8s/
+├── base/                    # manifestes communs aux deux environnements
+├── overlays/local/          # cluster kind, sur le poste
+└── overlays/production/     # VPS OVH sous k3s
+```
+
+La **base** décrit ce qui ne dépend pas de l'environnement : namespace, configuration non sensible, PostgreSQL, Deployment Django, Job de migration, Ingress. Elle n'est pas destinée à être appliquée telle quelle — l'image n'y porte pas d'étiquette et le domaine y est un substitut.
+
+Chaque **surcouche** référence la base et n'apporte que les écarts :
+
+| | `overlays/local` | `overlays/production` |
+|---|---|---|
+| Image | `dilane-shop:0.2.0`, chargée dans les nœuds par `kind load` | `ghcr.io/wankamdypuedilane/dilane-shop`, étiquetée par identifiant de commit, tirée depuis GHCR |
+| Domaine | `dilane-shop.local` | `dilane-shop.store` |
+| Certificat | `Issuer` auto-signé | `ClusterIssuer` Let's Encrypt |
+| Secret | `k8s/overlays/local/secrets.sops.yaml` | `k8s/overlays/production/secrets.sops.yaml` |
+
+Pour voir ce qu'une surcouche produit, sans rien appliquer :
+
+```bash
+kubectl kustomize k8s/overlays/local
+kubectl kustomize k8s/overlays/production
+```
+
+Deux objets restent volontairement hors de Kustomize :
+
+- **les Secrets**, dont les valeurs sont chiffrées par SOPS. Listés dans une surcouche, `kubectl apply -k` enverrait au cluster les valeurs chiffrées telles quelles. Ils sont appliqués séparément, voir [Secrets (SOPS et age)](#secrets-sops-et-age) ;
+- **le correctif de placement du contrôleur Ingress** ([k8s/overlays/local/07-ingress-controller-patch.yaml](k8s/overlays/local/07-ingress-controller-patch.yaml)), qui modifie un Deployment installé par un manifeste externe, dans un autre namespace.
+
+## Déploiement local (kind)
 
 ### Prérequis
 
@@ -281,52 +317,18 @@ docker build -t dilane-shop:0.2.0 .
 kind load docker-image dilane-shop:0.2.0 --name dilane-shop
 ```
 
-### 3. Créer le namespace, le Secret et la configuration
+### 3. Installer le contrôleur Ingress et son correctif de placement
 
-Le Secret est versionné chiffré dans [k8s/02-secrets.sops.yaml](k8s/02-secrets.sops.yaml). Appliquez-le après le namespace et avant tout le reste : PostgreSQL comme Django y lisent leurs variables au démarrage. Il faut sops, age et la clé privée age sur le poste : voir [Secrets (SOPS et age)](#secrets-sops-et-age).
-
-```bash
-kubectl apply -f k8s/00-namespace.yaml
-sops --decrypt k8s/02-secrets.sops.yaml | kubectl apply -f -
-kubectl apply -f k8s/01-configmap.yaml
-```
-
-Une fois appliqué, un Secret Kubernetes est **encodé en base64, pas chiffré**. Quiconque peut lire les Secrets du namespace peut lire les valeurs en clair. Voir la conséquence correspondante dans [docs/adr/002-kubernetes.md](docs/adr/002-kubernetes.md).
-
-### 4. Appliquer les manifestes applicatifs, dans l'ordre
-
-L'ordre compte : la base doit répondre avant les migrations, et les migrations doivent être passées avant que les pods Django ne servent du trafic.
-
-```bash
-kubectl apply -f k8s/03-postgres.yaml
-kubectl wait --namespace dilane-shop \
-  --for=condition=ready pod -l app.kubernetes.io/name=postgres --timeout=180s
-
-kubectl apply -f k8s/05-migration-job.yaml
-kubectl wait --namespace dilane-shop \
-  --for=condition=complete job/django-migrate --timeout=180s
-
-kubectl apply -f k8s/04-django.yaml
-```
-
-**Les migrations passent par le Job `k8s/05-migration-job.yaml`, pas au démarrage des pods.** Le `CMD` de l'image lance directement Gunicorn et aucun manifeste n'exécute `migrate` à l'initialisation d'un conteneur : avec deux replicas, plusieurs `migrate` s'exécuteraient en parallèle sur la même base. Le Job s'exécute une fois puis se termine, et se supprime cinq minutes après sa réussite (`ttlSecondsAfterFinished: 300`). Relancez-le après chaque changement de schéma, avant de déployer la nouvelle version de l'application :
-
-```bash
-kubectl delete job django-migrate -n dilane-shop --ignore-not-found
-kubectl apply -f k8s/05-migration-job.yaml
-kubectl logs -n dilane-shop job/django-migrate
-```
-
-### 5. Installer le contrôleur Ingress et son correctif de placement
+Le contrôleur et cert-manager s'installent **avant** la surcouche : celle-ci déclare un `Ingress` et un `Certificate`, et le type `Certificate` n'existe pas tant que cert-manager n'a pas enregistré ses définitions de ressources personnalisées.
 
 ```bash
 kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.15.1/deploy/static/provider/kind/deploy.yaml
-kubectl apply -f k8s/07-ingress-controller-patch.yaml
+kubectl apply -f k8s/overlays/local/07-ingress-controller-patch.yaml
 kubectl wait --namespace ingress-nginx \
   --for=condition=ready pod --selector=app.kubernetes.io/component=controller --timeout=180s
 ```
 
-Le correctif [k8s/07-ingress-controller-patch.yaml](k8s/07-ingress-controller-patch.yaml) n'est pas facultatif. Le manifeste `provider/kind` devrait contraindre le contrôleur au nœud portant `ingress-ready=true` ; dans la version installée par la commande ci-dessus, son `nodeSelector` ne contient que `kubernetes.io/os: linux`. Sans le correctif, le contrôleur peut se placer sur un nœud de travail, où les ports 80 et 443 ne sont pas mappés vers l'hôte : le site ne répond pas, alors que tous les pods sont `Running`. Vérifiez le placement :
+Le correctif [k8s/overlays/local/07-ingress-controller-patch.yaml](k8s/overlays/local/07-ingress-controller-patch.yaml) n'est pas facultatif. Le manifeste `provider/kind` devrait contraindre le contrôleur au nœud portant `ingress-ready=true` ; dans la version installée par la commande ci-dessus, son `nodeSelector` ne contient que `kubernetes.io/os: linux`. Sans le correctif, le contrôleur peut se placer sur un nœud de travail, où les ports 80 et 443 ne sont pas mappés vers l'hôte : le site ne répond pas, alors que tous les pods sont `Running`. Vérifiez le placement :
 
 ```bash
 kubectl get pods -n ingress-nginx -o wide
@@ -334,18 +336,55 @@ kubectl get pods -n ingress-nginx -o wide
 
 Le pod `ingress-nginx-controller` doit être sur `dilane-shop-control-plane`.
 
-### 6. Installer cert-manager et publier le site en HTTPS
+### 4. Installer cert-manager
 
 ```bash
 kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.16.2/cert-manager.yaml
 kubectl wait --namespace cert-manager \
   --for=condition=available deployment --all --timeout=180s
-
-kubectl apply -f k8s/08-tls.yaml
-kubectl apply -f k8s/06-ingress.yaml
 ```
 
-`k8s/08-tls.yaml` déclare un `Issuer` auto-signé et le `Certificate` correspondant ; cert-manager crée le Secret `tls-dilane-shop` que l'Ingress consomme. Il doit donc être appliqué avant l'Ingress.
+### 5. Créer le namespace et le Secret
+
+Le Secret est versionné chiffré dans [k8s/overlays/local/secrets.sops.yaml](k8s/overlays/local/secrets.sops.yaml). Appliquez-le avant la surcouche : PostgreSQL comme Django y lisent leurs variables au démarrage. Il faut sops, age et la clé privée age sur le poste : voir [Secrets (SOPS et age)](#secrets-sops-et-age).
+
+Le namespace vient de la base ; il est appliqué ici parce que le Secret y est créé.
+
+```bash
+kubectl apply -f k8s/base/00-namespace.yaml
+sops --decrypt k8s/overlays/local/secrets.sops.yaml | kubectl apply -f -
+```
+
+Une fois appliqué, un Secret Kubernetes est **encodé en base64, pas chiffré**. Quiconque peut lire les Secrets du namespace peut lire les valeurs en clair. Voir la conséquence correspondante dans [docs/adr/002-kubernetes.md](docs/adr/002-kubernetes.md).
+
+### 6. Déployer l'application
+
+```bash
+kubectl apply -k k8s/overlays/local
+```
+
+Une seule commande applique la configuration, PostgreSQL, le Job de migration, Django, l'Ingress et le certificat. Attendez ensuite que la base réponde et que les migrations aboutissent :
+
+```bash
+kubectl wait --namespace dilane-shop \
+  --for=condition=ready pod -l app.kubernetes.io/name=postgres --timeout=180s
+kubectl wait --namespace dilane-shop \
+  --for=condition=complete job/django-migrate --timeout=180s
+```
+
+**Les migrations passent par un Job, pas par le démarrage des pods.** Le `CMD` de l'image lance directement Gunicorn et aucun manifeste n'exécute `migrate` à l'initialisation d'un conteneur : avec deux replicas, plusieurs `migrate` s'exécuteraient en parallèle sur la même base. Le Job s'exécute une fois puis se termine, et se supprime cinq minutes après sa réussite (`ttlSecondsAfterFinished: 300`).
+
+**L'ordre de démarrage n'est pas garanti.** `kubectl apply -k` envoie tous les objets d'un bloc : le Job de migration démarre donc avant que PostgreSQL ne réponde. Son `backoffLimit: 3` lui laisse quatre tentatives, ce qui suffit en général mais pas toujours. Si le Job a épuisé ses tentatives, relancez-le :
+
+```bash
+kubectl delete job django-migrate -n dilane-shop --ignore-not-found
+kubectl apply -k k8s/overlays/local
+kubectl logs -n dilane-shop job/django-migrate
+```
+
+Le `spec.template` d'un Job est immuable : supprimez toujours le Job avant de le réappliquer avec une autre image, sinon `kubectl` refuse la modification. C'est aussi la marche à suivre après chaque changement de schéma.
+
+Le certificat vient de [k8s/overlays/local/tls.yaml](k8s/overlays/local/tls.yaml), qui déclare un `Issuer` auto-signé et le `Certificate` correspondant ; cert-manager crée le Secret `tls-dilane-shop` que l'Ingress consomme.
 
 ```bash
 kubectl get certificate -n dilane-shop
@@ -393,21 +432,84 @@ kubectl delete namespace dilane-shop                  # tout supprimer, sauf le 
 kind delete cluster --name dilane-shop                # supprimer le cluster
 ```
 
+## Déploiement en production (VPS OVH, k3s)
+
+La surcouche [k8s/overlays/production/](k8s/overlays/production/) applique la même base sur un VPS OVH sous k3s. Elle n'a pas encore été exercée sur un cluster réel.
+
+### Prérequis
+
+- un VPS avec k3s installé et un `kubeconfig` utilisable depuis le poste ;
+- un enregistrement DNS `A` pour `dilane-shop.store` pointant vers l'adresse publique du VPS, sans quoi la validation de Let's Encrypt échoue ;
+- **ingress-nginx installé sur le cluster.** k3s installe Traefik par défaut, alors que l'Ingress de la base déclare `ingressClassName: nginx` et des annotations `nginx.ingress.kubernetes.io/*`. Avec Traefik, ces annotations sont ignorées et il faut leurs équivalents ;
+- cert-manager installé, comme en local ;
+- sops, age et la clé privée age sur le poste qui déploie.
+
+### Déployer
+
+```bash
+kubectl apply -f k8s/base/00-namespace.yaml
+sops --decrypt k8s/overlays/production/secrets.sops.yaml | kubectl apply -f -
+kubectl apply -k k8s/overlays/production
+
+kubectl wait --namespace dilane-shop \
+  --for=condition=complete job/django-migrate --timeout=180s
+```
+
+Les secrets de production sont dans un fichier distinct de ceux du poste, [k8s/overlays/production/secrets.sops.yaml](k8s/overlays/production/secrets.sops.yaml) : même nom d'objet et mêmes huit clés, valeurs différentes. Les deux sont chiffrés pour la même clé age.
+
+### Image déployée
+
+La surcouche référence l'image par **l'identifiant du commit** qui l'a produite, et non par `latest` : la version en service est lisible dans le dépôt, et revenir en arrière consiste à remettre l'identifiant précédent. La CI publie les deux étiquettes à chaque poussée sur `main` (étape « Publish image to GHCR » de `ci.yml`).
+
+Pour déployer une nouvelle version, remplacez `newTag` dans [k8s/overlays/production/kustomization.yaml](k8s/overlays/production/kustomization.yaml) par l'identifiant du commit voulu, puis réappliquez la surcouche. Le Job de migration devant être recréé, supprimez-le d'abord :
+
+```bash
+kubectl delete job django-migrate -n dilane-shop --ignore-not-found
+kubectl apply -k k8s/overlays/production
+kubectl rollout status -n dilane-shop deploy/django
+```
+
+Si le paquet GHCR est privé, le cluster ne pourra pas tirer l'image sans un `imagePullSecret` dans le namespace : aucun n'est déclaré aujourd'hui.
+
+### Certificat
+
+[k8s/overlays/production/tls.yaml](k8s/overlays/production/tls.yaml) déclare deux `ClusterIssuer` Let's Encrypt, l'environnement de test et celui de production, ainsi que le `Certificate` du domaine.
+
+Le `Certificate` pointe volontairement sur **l'environnement de test** : celui de production limite fortement le nombre de tentatives échouées par domaine et par semaine, et son certificat serait refusé par les navigateurs le temps de la mise au point. Une fois une émission réussie constatée, basculez :
+
+1. remplacer `letsencrypt-test` par `letsencrypt-production` dans l'`issuerRef` du `Certificate` ;
+2. supprimer le Secret pour forcer une nouvelle demande, puis réappliquer.
+
+```bash
+kubectl delete secret tls-dilane-shop -n dilane-shop
+kubectl apply -k k8s/overlays/production
+kubectl get certificate -n dilane-shop
+```
+
 ## Secrets (SOPS et age)
 
-Les huit secrets du cluster sont versionnés dans [k8s/02-secrets.sops.yaml](k8s/02-secrets.sops.yaml), chiffrés avec [SOPS](https://github.com/getsops/sops) et une clé [age](https://github.com/FiloSottile/age). La décision et ses alternatives sont dans [docs/adr/004-gestion-des-secrets.md](docs/adr/004-gestion-des-secrets.md).
+Les huit secrets du cluster sont versionnés chiffrés avec [SOPS](https://github.com/getsops/sops) et une clé [age](https://github.com/FiloSottile/age), dans **un fichier par environnement** :
 
-- **Seules les valeurs sont chiffrées.** Les noms des clés et la structure du manifeste restent lisibles : la règle `encrypted_regex: '^(data|stringData)$'` de [.sops.yaml](.sops.yaml) ne chiffre que ce qui se trouve sous `data` et `stringData`.
+| Environnement | Fichier |
+|---|---|
+| Poste de développement, cluster kind | [k8s/overlays/local/secrets.sops.yaml](k8s/overlays/local/secrets.sops.yaml) |
+| Production | [k8s/overlays/production/secrets.sops.yaml](k8s/overlays/production/secrets.sops.yaml) |
+
+Les deux décrivent le même objet `dilane-shop-secrets` avec les mêmes huit clés, et sont chiffrés pour la même clé age ; seules les valeurs diffèrent. La décision et ses alternatives sont dans [docs/adr/004-gestion-des-secrets.md](docs/adr/004-gestion-des-secrets.md).
+
+Dans les procédures ci-dessous, remplacez le chemin par celui de l'environnement visé.
+
+- **Seules les valeurs sont chiffrées.** Les noms des clés et la structure du manifeste restent lisibles : la règle `encrypted_regex: '^(data|stringData)$'` de [.sops.yaml](.sops.yaml) ne chiffre que ce qui se trouve sous `data` et `stringData`. Son `path_regex` couvre `k8s/` et ses sous-répertoires : un fichier `*.sops.yaml` placé dans une surcouche est chiffré par la même règle.
 - **La clé publique** figure dans `.sops.yaml`. Elle n'est pas secrète et sert à chiffrer.
 - **La clé privée** vit dans `~/.config/sops/age/keys.txt`, emplacement par défaut où sops la cherche. Elle n'est **jamais versionnée**, et elle seule permet de déchiffrer.
 - Les fichiers de secrets en clair sont ignorés par `.gitignore` (`k8s/*-secrets.yaml`, `k8s/secrets*.yaml`, `*.dec.yaml`). Seuls les fichiers `*.sops.yaml`, chiffrés, sont versionnés.
-- `DJANGO_SECRET_KEY` et `DB_PASSWORD` contiennent des valeurs générées aléatoirement. Les valeurs Stripe et Brevo sont des marqueurs `a_remplacer`, à remplacer par de vraies clés avant tout paiement ou envoi d'email.
+- `DJANGO_SECRET_KEY` et `DB_PASSWORD` contiennent des valeurs générées aléatoirement, distinctes d'un environnement à l'autre. Dans le fichier du poste, les trois valeurs Stripe sont encore des marqueurs `a_remplacer` : le paiement y est donc inactif.
 
 > **La perte de la clé privée rend tous les secrets chiffrés illisibles.** Il n'existe aucun moyen de les récupérer : il faudrait régénérer chaque valeur auprès de Stripe, de Brevo et de PostgreSQL, puis tout chiffrer de nouveau. Deux copies de sauvegarde de la clé sont conservées hors du poste de développement. La procédure de restauration figure plus bas.
 
 ### Installer sops et age
 
-Versions de référence : sops v3.13.3 et age v1.3.2, publiées pour `amd64` et `arm64`. Remplacez `amd64` par `arm64` sur une machine ARM, comme la VM Azure prévue.
+Versions de référence : sops v3.13.3 et age v1.3.2, publiées pour `amd64` et `arm64`. Remplacez `amd64` par `arm64` sur une machine ARM.
 
 ```bash
 ARCH=amd64
@@ -430,10 +532,10 @@ age --version
 ### Appliquer les secrets au cluster
 
 ```bash
-sops --decrypt k8s/02-secrets.sops.yaml | kubectl apply -f -
+sops --decrypt k8s/overlays/local/secrets.sops.yaml | kubectl apply -f -
 ```
 
-Le fichier est déchiffré vers la sortie standard et transmis directement à `kubectl` : aucune copie en clair n'est écrite sur le disque. **N'appliquez jamais `k8s/02-secrets.sops.yaml` directement** avec `kubectl apply -f` : il contient les valeurs chiffrées et un bloc `sops` que Kubernetes ne connaît pas.
+Le fichier est déchiffré vers la sortie standard et transmis directement à `kubectl` : aucune copie en clair n'est écrite sur le disque. **N'appliquez jamais un fichier `.sops.yaml` directement** avec `kubectl apply -f` : il contient les valeurs chiffrées et un bloc `sops` que Kubernetes ne connaît pas. C'est aussi la raison pour laquelle ces fichiers ne sont listés dans aucune kustomization.
 
 Les variables d'environnement d'un pod sont lues à son démarrage. Après un changement de valeur, redémarrez les pods qui la consomment :
 
@@ -444,7 +546,7 @@ kubectl rollout restart -n dilane-shop deploy/django
 ### Modifier un secret
 
 ```bash
-sops k8s/02-secrets.sops.yaml
+sops k8s/overlays/local/secrets.sops.yaml
 ```
 
 sops déchiffre le fichier dans l'éditeur défini par `$EDITOR`, puis le rechiffre à l'enregistrement. Aucune copie en clair ne reste sur le disque. Appliquez ensuite au cluster, comme ci-dessus.
@@ -453,10 +555,10 @@ sops déchiffre le fichier dans l'éditeur défini par `$EDITOR`, puis le rechif
 
 ### Ajouter une nouvelle clé
 
-1. Ouvrir le fichier avec `sops k8s/02-secrets.sops.yaml` et ajouter la ligne sous `stringData`. La règle de `.sops.yaml` la chiffre à l'enregistrement.
+1. Ouvrir **chacun des deux fichiers** avec `sops` et y ajouter la ligne sous `stringData`, avec la valeur propre à l'environnement. La règle de `.sops.yaml` la chiffre à l'enregistrement. Une clé ajoutée d'un seul côté manquera à l'autre environnement.
 2. Appliquer au cluster et redémarrer les pods. Le Deployment `django` et le Job de migration reçoivent **toutes** les clés du Secret par `envFrom` : aucun manifeste à modifier. PostgreSQL, lui, ne lit que `DB_PASSWORD`.
 3. Ajouter la variable, sans valeur réelle, à `.env.example`, pour que la pile Docker Compose et la CI la connaissent aussi.
-4. Vérifier que le nom apparaît en clair et la valeur sous forme `ENC[…]` dans `git diff k8s/02-secrets.sops.yaml` avant de commiter.
+4. Vérifier que le nom apparaît en clair et la valeur sous forme `ENC[…]` dans `git diff` avant de commiter.
 
 ### Restaurer la clé age depuis une sauvegarde
 
@@ -480,7 +582,7 @@ sops déchiffre le fichier dans l'éditeur défini par `$EDITOR`, puis le rechif
 3. **Vérifier le déchiffrement**, sans afficher les valeurs :
 
    ```bash
-   sops --decrypt k8s/02-secrets.sops.yaml > /dev/null
+   sops --decrypt k8s/overlays/local/secrets.sops.yaml > /dev/null
    echo "code de sortie : $?"
    ```
 
@@ -525,7 +627,8 @@ Les pages de confirmation et de retour de paiement exigent une connexion et n’
 ├── shop/                       # App métier : modèles, vues, services, tests
 ├── templates/                  # Surcharges de gabarits de l'admin
 ├── fixtures/                   # Données de démonstration (loaddata)
-├── k8s/                        # Manifestes Kubernetes, Secret chiffré (SOPS) et configuration kind
+├── k8s/                        # Manifestes Kubernetes : base Kustomize, surcouches local et production,
+│                               #   Secret chiffré (SOPS) et configuration kind
 ├── docs/
 │   ├── adr/                    # Décisions d'architecture
 │   └── sprints/                # Rétrospectives de sprint

@@ -1,0 +1,77 @@
+# Autorites de certification Let's Encrypt.
+#
+# Deux ClusterIssuer sont declares : l'environnement de test et
+# l'environnement de production de Let's Encrypt. L'environnement de
+# production limite fortement le nombre de tentatives echouees par domaine
+# et par semaine ; l'environnement de test n'a pas cette limite, mais son
+# certificat n'est pas reconnu par les navigateurs.
+#
+# Le Certificate ci-dessous pointe volontairement sur l'environnement de
+# TEST. Une fois une emission reussie constatee, basculer letsencrypt-test
+# en letsencrypt-production dans son issuerRef, puis supprimer le Secret
+# tls-dilane-shop pour forcer une nouvelle demande :
+#
+#   kubectl delete secret tls-dilane-shop -n dilane-shop
+#
+# Un ClusterIssuer n'appartient a aucun namespace, contrairement a l'Issuer
+# auto-signe de l'environnement local.
+#
+# ATTENTION — email a remplir avant toute application. Let's Encrypt s'en
+# sert pour prevenir de l'expiration d'un certificat non renouvele. La
+# valeur ci-dessous n'est pas une adresse valide : l'application echouera
+# tant qu'elle n'est pas remplacee, ce qui est voulu.
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-test
+spec:
+  acme:
+    server: https://acme-staging-v02.api.letsencrypt.org/directory
+    email: wankamdypuedilane@gmail.com
+    privateKeySecretRef:
+      # Cle du compte ACME, creee par cert-manager dans son propre namespace
+      name: letsencrypt-test-compte
+    solvers:
+      # Validation HTTP01 : Let's Encrypt appelle le site sur le port 80,
+      # cert-manager cree un Ingress temporaire pour repondre au defi.
+      - http01:
+          ingress:
+            ingressClassName: nginx
+
+---
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-production
+spec:
+  acme:
+    server: https://acme-v02.api.letsencrypt.org/directory
+    email: wankamdypuedilane@gmail.com
+    privateKeySecretRef:
+      name: letsencrypt-production-compte
+    solvers:
+      - http01:
+          ingress:
+            ingressClassName: nginx
+
+---
+# Certificat du domaine public.
+# cert-manager cree le Secret tls-dilane-shop, que l'Ingress consomme.
+#
+# Ni duration ni subject ici, contrairement au certificat local :
+# Let's Encrypt fixe lui-meme la duree a 90 jours et n'emet que des
+# certificats valides pour un domaine, sans information d'organisation.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: dilane-shop-tls
+  namespace: dilane-shop
+spec:
+  secretName: tls-dilane-shop
+  renewBefore: 360h    # renouvellement 15 jours avant expiration
+  dnsNames:
+    - dilane-shop.store
+  issuerRef:
+    name: letsencrypt-test
+    kind: ClusterIssuer
+    group: cert-manager.io

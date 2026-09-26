@@ -12,12 +12,16 @@ metadata:
     nginx.ingress.kubernetes.io/ssl-redirect: "true"
 spec:
   ingressClassName: nginx
+  # dilane-shop.example n'est qu'un substitut : le TLD .example est reserve
+  # par la RFC 2606 et ne resout jamais. Chaque overlay remplace ce nom par
+  # son domaine reel (voir overlays/*/patch-ingress.yaml). La base n'est pas
+  # destinee a etre appliquee seule.
   tls:
     - hosts:
-        - dilane-shop.local
+        - dilane-shop.example
       secretName: tls-dilane-shop
   rules:
-    - host: dilane-shop.local
+    - host: dilane-shop.example
       http:
         paths:
           - path: /

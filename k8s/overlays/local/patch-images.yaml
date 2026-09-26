@@ -1,0 +1,30 @@
+# kind ne telecharge aucune image : elle est copiee dans les noeuds par
+# "kind load docker-image". IfNotPresent evite toute tentative d'acces a un
+# registre, qui echouerait puisque l'image n'y est pas publiee sous ce nom.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: django
+  namespace: dilane-shop
+  annotations:
+    # Raison du deploiement, visible dans kubectl rollout history
+    kubernetes.io/change-cause: "Image 0.2.0 — ajout de l'endpoint /healthz/ et des sondes"
+spec:
+  template:
+    spec:
+      containers:
+        - name: django
+          imagePullPolicy: IfNotPresent
+
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: django-migrate
+  namespace: dilane-shop
+spec:
+  template:
+    spec:
+      containers:
+        - name: migrate
+          imagePullPolicy: IfNotPresent

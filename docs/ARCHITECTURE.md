@@ -9,7 +9,9 @@ Tout ce qui suit décrit le code tel qu'il existe, sans recommandation.
 >
 > **Mise à jour du 24/09/2026.** Analyse statique Bandit ajoutée à la CI, juste après pip-audit et avant la construction des images (issue #36). Son seul constat, `mark_safe` dans `shop/admin.py`, est corrigé par `330c331`. Plus tard le même jour : pip retiré de l'image de production (étape `runtime` du Dockerfile) et scan de vulnérabilités de l'image par Trivy, juste après la construction des images. Enfin, en-têtes de sécurité HTTP (issue #38) : politique CSP native de Django avec jeton sur les scripts en ligne, et en-tête `Permissions-Policy` (voir la section « En-têtes de sécurité HTTP », §2).
 >
-> **Mise à jour du 25/09/2026.** Secrets Kubernetes versionnés chiffrés avec SOPS et age, selon l'[ADR-004](adr/004-gestion-des-secrets.md) : `.sops.yaml`, `k8s/02-secrets.sops.yaml`, `k8s/02-secrets.example.yaml` réduit à un aide-mémoire, secrets en clair exclus par `.gitignore` (§3.3).
+> **Mise à jour du 25/09/2026.** Secrets Kubernetes versionnés chiffrés avec SOPS et age, selon l'[ADR-004](adr/004-gestion-des-secrets.md) : `.sops.yaml`, `k8s/02-secrets.sops.yaml`, secrets en clair exclus par `.gitignore` (§3.3). `k8s/02-secrets.example.yaml`, qui documentait la création du Secret à la main, est supprimé.
+>
+> **Mise à jour du 26/09/2026.** Manifestes Kubernetes réorganisés avec Kustomize, en une base et deux surcouches, pour deux environnements : local sur `kind` et production sur un VPS OVH sous `k3s` (§1 et §3.3). Les chemins `k8s/0X-*.yaml` n'existent plus sous cette forme.
 
 ---
 
@@ -72,18 +74,34 @@ e-commerce/
 ├── fixtures/
 │   └── demo-catalogue.json       # 5 catégories + 25 produits, chargés par loaddata
 │
-├── k8s/                          # Manifestes Kubernetes (Sprint 10)
+├── k8s/                          # Manifestes Kubernetes (Sprint 10), organisés avec Kustomize
 │   ├── kind-cluster.yaml         # Cluster local 3 nœuds : 1 control-plane + 2 workers
-│   ├── 00-namespace.yaml         # Namespace dilane-shop
-│   ├── 01-configmap.yaml         # 12 clés de configuration non sensible
-│   ├── 02-secrets.sops.yaml      # Secret dilane-shop-secrets, 8 clés : valeurs chiffrées par SOPS, noms en clair
-│   ├── 02-secrets.example.yaml   # Aide-mémoire en commentaires, aucun objet : édition et application du Secret chiffré
-│   ├── 03-postgres.yaml          # Service headless + StatefulSet + volumeClaimTemplates 2 Gi
-│   ├── 04-django.yaml            # Service ClusterIP + Deployment 2 replicas, probes, maxUnavailable 0
-│   ├── 05-migration-job.yaml     # Job django-migrate, hors du cycle de vie des pods web
-│   ├── 06-ingress.yaml           # Ingress nginx, hôte dilane-shop.local, redirection HTTPS
-│   ├── 07-ingress-controller-patch.yaml  # Correctif de placement du contrôleur
-│   └── 08-tls.yaml               # Issuer auto-signé + Certificate cert-manager
+│   ├── 02-secrets.sops.yaml      # Secret du poste : 8 clés, valeurs chiffrées par SOPS, noms en clair
+│   │
+│   ├── base/                     # Manifestes communs, sans valeur propre à un environnement
+│   │   ├── kustomization.yaml    # Liste les 6 manifestes ci-dessous
+│   │   ├── 00-namespace.yaml     # Namespace dilane-shop
+│   │   ├── 01-configmap.yaml     # 10 clés communes ; les 2 liées au domaine viennent des surcouches
+│   │   ├── 03-postgres.yaml      # Service headless + StatefulSet + volumeClaimTemplates 2 Gi
+│   │   ├── 04-django.yaml        # Service ClusterIP + Deployment 2 replicas, probes, maxUnavailable 0
+│   │   ├── 05-migration-job.yaml # Job django-migrate, hors du cycle de vie des pods web
+│   │   └── 06-ingress.yaml       # Ingress nginx, redirection HTTPS, hôte substitut dilane-shop.example
+│   │
+│   └── overlays/                 # Une surcouche par environnement
+│       ├── local/                # Cluster kind, sur le poste
+│       │   ├── kustomization.yaml            # Image dilane-shop:0.2.0, 3 correctifs
+│       │   ├── patch-configmap.yaml          # Hôtes autorisés et origines CSRF en .local
+│       │   ├── patch-ingress.yaml            # Hôte dilane-shop.local
+│       │   ├── patch-images.yaml             # imagePullPolicy IfNotPresent, change-cause
+│       │   ├── tls.yaml                      # Issuer auto-signé + Certificate
+│       │   └── 07-ingress-controller-patch.yaml  # Correctif de placement du contrôleur, hors Kustomize
+│       └── production/           # VPS OVH sous k3s
+│           ├── kustomization.yaml            # Image GHCR étiquetée par identifiant de commit
+│           ├── patch-configmap.yaml          # Hôtes autorisés et origines CSRF en .store
+│           ├── patch-ingress.yaml            # Hôte dilane-shop.store
+│           ├── patch-images.yaml             # imagePullPolicy IfNotPresent
+│           ├── tls.yaml                      # 2 ClusterIssuer Let's Encrypt + Certificate
+│           └── secrets.sops.yaml             # Secret de production, mêmes 8 clés, autres valeurs
 │
 ├── infra/terraform/              # ARCHIVE — infrastructure AWS, plus active (compte fermé)
 │   ├── versions.tf               # terraform >= 1.6, provider aws ~> 5.0
@@ -304,7 +322,23 @@ Points factuels :
 
 ### 3.3 Déploiement — Kubernetes
 
-Validé sur un cluster `kind` à trois nœuds (Kubernetes, série 1.37). La cible d'hébergement durable est `k3s` sur une VM Azure, non encore créée.
+Validé sur un cluster `kind` à trois nœuds (Kubernetes, série 1.37). La cible d'hébergement durable est `k3s` sur un VPS OVH, non encore créé.
+
+Les manifestes sont organisés avec **Kustomize**, en une base et deux surcouches, une par environnement :
+
+| | `k8s/base` | `k8s/overlays/local` | `k8s/overlays/production` |
+|---|---|---|---|
+| Rôle | Manifestes communs, jamais appliqués seuls | Cluster `kind`, sur le poste | VPS OVH sous `k3s` |
+| Image | `dilane-shop`, sans registre ni étiquette | `dilane-shop:0.2.0`, chargée par `kind load` | `ghcr.io/wankamdypuedilane/dilane-shop`, étiquetée par identifiant de commit |
+| Domaine | substitut `dilane-shop.example` | `dilane-shop.local` | `dilane-shop.store` |
+| Certificat | absent de la base | `Issuer` auto-signé | `ClusterIssuer` Let's Encrypt |
+| Secret | absent de la base | `k8s/02-secrets.sops.yaml` | `k8s/overlays/production/secrets.sops.yaml` |
+
+Chaque surcouche se déploie par `kubectl apply -k k8s/overlays/<environnement>`, et `kubectl kustomize` en montre le résultat sans rien appliquer. Les écarts sont exprimés par les mécanismes de Kustomize : le champ `images` pour le registre et l'étiquette, un correctif JSON 6902 pour l'hôte de l'Ingress, des correctifs de fusion pour le ConfigMap et la politique de téléchargement de l'image.
+
+Deux objets restent hors de Kustomize : les Secrets, dont les valeurs chiffrées seraient envoyées telles quelles au cluster, et le correctif de placement du contrôleur Ingress, qui modifie une ressource installée par un manifeste externe dans un autre namespace.
+
+Le diagramme ci-dessous décrit l'environnement local.
 
 ```mermaid
 graph TB
@@ -366,10 +400,11 @@ graph TB
 Points factuels sur ce déploiement :
 
 - **Les migrations passent par un Job**, pas au démarrage des pods : avec deux replicas, plusieurs `migrate` s'exécuteraient en parallèle sur la même base.
-- **Aucune image n'est téléchargée depuis un registre.** `imagePullPolicy: IfNotPresent` et `kind load docker-image` : l'image reste locale. Un déploiement distant exigera un registre, ce qui n'est pas fait.
-- **Les secrets sont versionnés chiffrés, et déchiffrés au déploiement** ([ADR-004](adr/004-gestion-des-secrets.md)). `k8s/02-secrets.sops.yaml` est un manifeste `Secret` dont seules les valeurs sous `stringData` sont chiffrées par SOPS, avec une clé age ; les noms des huit clés, `metadata` et `type` restent lisibles. La règle est dans `.sops.yaml` : elle s'applique aux fichiers `k8s/*.sops.yaml`, limite le chiffrement à `data` et `stringData` et désigne la clé publique age. La clé privée vit hors du dépôt, dans `~/.config/sops/age/keys.txt`. `sops --decrypt k8s/02-secrets.sops.yaml | kubectl apply -f -` reconstitue le Secret sans écrire de fichier en clair sur le disque. `.gitignore` exclut les fichiers de secrets en clair (`k8s/*-secrets.yaml`, `k8s/secrets*.yaml`, `*.dec.yaml`). La CI ne déchiffre rien : elle génère ses propres valeurs.
+- **Aucune image n'est téléchargée depuis un registre en local.** `imagePullPolicy: IfNotPresent` et `kind load docker-image` : l'image reste sur le poste. La surcouche de production, elle, tire l'image depuis GHCR, où la CI la publie.
+- **L'étiquette de l'image est déclarée une seule fois par environnement.** Le champ `images` de la surcouche la fixe pour le Deployment et pour le Job de migration à la fois. L'écart constaté au Sprint 10 entre les deux manifestes, qui référençaient deux étiquettes différentes, n'est plus possible par construction (issue #31).
+- **Les secrets sont versionnés chiffrés, et déchiffrés au déploiement** ([ADR-004](adr/004-gestion-des-secrets.md)). Un fichier par environnement : `k8s/02-secrets.sops.yaml` pour le poste, `k8s/overlays/production/secrets.sops.yaml` pour la production. Les deux décrivent le même objet `dilane-shop-secrets` avec les mêmes huit clés et sont chiffrés pour la même clé age ; seules les valeurs diffèrent. Ce sont des manifestes `Secret` dont seules les valeurs sous `stringData` sont chiffrées par SOPS : les noms des clés, `metadata` et `type` restent lisibles. La règle est dans `.sops.yaml` : son `path_regex` couvre `k8s/` et ses sous-répertoires, elle limite le chiffrement à `data` et `stringData` et désigne la clé publique age. La clé privée vit hors du dépôt, dans `~/.config/sops/age/keys.txt`. `sops --decrypt <fichier> | kubectl apply -f -` reconstitue le Secret sans écrire de fichier en clair sur le disque. `.gitignore` exclut les fichiers de secrets en clair (`k8s/*-secrets.yaml`, `k8s/secrets*.yaml`, `*.dec.yaml`). La CI ne déchiffre rien : elle génère ses propres valeurs.
 - **Une fois appliqué, le Secret reste encodé en base64, pas chiffré.** Une commande `kubectl` suffit à lire une valeur en clair dans le cluster. Le chiffrement au repos du cluster n'est pas activé (issue #39).
-- **Le certificat est auto-signé.** Let's Encrypt ne peut pas valider `dilane-shop.local`, qui n'existe que dans le fichier `hosts` du poste. La durée (90 jours) et la fenêtre de renouvellement (15 jours) reprennent celles de Let's Encrypt pour que la bascule ne change que l'`issuerRef`.
+- **Le certificat est auto-signé en local.** Let's Encrypt ne peut pas valider `dilane-shop.local`, qui n'existe que dans le fichier `hosts` du poste. La durée (90 jours) et la fenêtre de renouvellement (15 jours) reprennent celles de Let's Encrypt. La surcouche de production déclare deux `ClusterIssuer` Let's Encrypt, l'environnement de test et celui de production ; son `Certificate` pointe sur celui de test, la bascule ne changeant que l'`issuerRef`.
 - **Le placement du contrôleur Ingress est corrigé par un manifeste du dépôt.** Le manifeste `provider/kind` de la série 1.15, dans la version installée par le README, ne contraint pas le contrôleur au nœud portant `ingress-ready=true` : son `nodeSelector` ne contient que `kubernetes.io/os: linux`. Sans le correctif, le pod peut se placer sur un worker, où les ports 80 et 443 ne sont pas mappés.
 - **Le déploiement n'est pas automatisé.** Aucun workflow ne déploie : l'image est construite et chargée à la main (`kind load docker-image`). La publication de l'image dans un registre depuis la CI est suivie par l'issue #43.
 
@@ -469,7 +504,7 @@ Aucune clé publique Stripe n'est exposée dans les templates : il n'y a pas de 
 
 Remarques factuelles :
 
-- La branche SQLite existe toujours dans le code, mais **aucun environnement conteneurisé ne l'emprunte** : `.env.example`, `k8s/01-configmap.yaml` et `docker-compose.yml` fixent tous `DB_ENGINE=postgres`, et `.dockerignore` exclut `*.sqlite3` de l'image. Elle ne subsiste que pour une exécution hors conteneur.
+- La branche SQLite existe toujours dans le code, mais **aucun environnement conteneurisé ne l'emprunte** : `.env.example`, `k8s/base/01-configmap.yaml` et `docker-compose.yml` fixent tous `DB_ENGINE=postgres`, et `.dockerignore` exclut `*.sqlite3` de l'image. Elle ne subsiste que pour une exécution hors conteneur.
 - `DB_HOST` est un nom de service, pas une adresse IP : `db` sous Docker Compose (DNS Docker), `postgres` sous Kubernetes (DNS du Service headless).
 - `DB_SSLMODE=disable` dans les deux environnements : le trafic PostgreSQL ne sort pas du réseau du conteneur ou du cluster.
 - Le code utilise `select_for_update()` dans `checkout` et `stripe_webhook`. Ce verrouillage a désormais partout la sémantique PostgreSQL.
@@ -498,11 +533,11 @@ La feuille de style **Bootstrap Icons n'est pas chargée**, alors qu'une classe 
 |---|---|
 | Images de base | `python:3.13-slim` (les quatre étapes du Dockerfile, et les conteneurs jetables du scan pip-audit et de l'analyse Bandit en CI), `postgres:17-alpine` |
 | Outils de CI | `aquasec/trivy`, série 0.74, conteneur jetable du scan de l'image. L'étiquette est épinglée dans `ci.yml` ; Dependabot ne la met pas à jour, puisque son écosystème `docker` ne surveille que le Dockerfile. |
-| Docker | Image applicative `dilane-shop`, étiquetée `0.1.0` dans `docker-compose.yml` et `0.2.0` dans `k8s/04-django.yaml` et `k8s/05-migration-job.yaml` ; image de test `dilane-shop:test`. Les deux étiquettes applicatives désignent aujourd'hui des contenus différents (issue #31). |
+| Docker | Image applicative `dilane-shop`, étiquetée `0.1.0` dans `docker-compose.yml` et `0.2.0` par la surcouche locale ; image de test `dilane-shop:test`. En production, l'image vient de `ghcr.io/wankamdypuedilane/dilane-shop`, étiquetée par identifiant de commit. |
 | kind | Série 0.33 — cluster `dilane-shop`, 3 nœuds, Kubernetes série 1.37 |
 | kubectl | Série 1.37 |
-| ingress-nginx | Série 1.15, manifeste `provider/kind`, complété par `k8s/07-ingress-controller-patch.yaml` |
-| cert-manager | Série 1.16, `Issuer` auto-signé déclaré dans `k8s/08-tls.yaml` |
+| ingress-nginx | Série 1.15, manifeste `provider/kind`, complété par `k8s/overlays/local/07-ingress-controller-patch.yaml` |
+| cert-manager | Série 1.16, `Issuer` auto-signé déclaré dans `k8s/overlays/local/tls.yaml` ; `ClusterIssuer` Let's Encrypt dans `k8s/overlays/production/tls.yaml` |
 | StorageClass | `standard` (`rancher.io/local-path`), fournie par kind, `WaitForFirstConsumer` |
 | GitHub Actions | `actions/checkout@v7`, runner `ubuntu-24.04`. Aucune autre action : Python et les outils s'exécutent dans des conteneurs. |
 | AWS / Terraform | **Archive.** Provider `hashicorp/aws ~> 5.0`, backend local. Compte fermé, instance supprimée. |

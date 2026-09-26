@@ -1,0 +1,8 @@
+# Correctif JSON 6902 : remplace le domaine substitut de la base par le
+# domaine local, sans recopier la regle de routage ni le service cible.
+- op: replace
+  path: /spec/rules/0/host
+  value: dilane-shop.local
+- op: replace
+  path: /spec/tls/0/hosts/0
+  value: dilane-shop.local

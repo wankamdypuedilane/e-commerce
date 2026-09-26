@@ -1,0 +1,30 @@
+# Environnement de production — VPS OVH, k3s.
+#
+# L'image vient du registre GHCR, ou la CI la publie a chaque poussee sur
+# main (etape « Publish image to GHCR » de ci.yml). Domaine dilane-shop.store,
+# certificat signe par Let's Encrypt.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../../base
+  - tls.yaml
+
+# Registre et etiquette de l'image publiee par la CI. Elle publie aussi
+# l'image sous l'identifiant du commit : remplacer newTag par cet
+# identifiant donne un deploiement tracable et reversible (voir le README).
+images:
+  - name: dilane-shop
+    newName: ghcr.io/wankamdypuedilane/dilane-shop
+    newTag: 4b84315b585fc40d61849789e6bcf55dc402d8af
+
+patches:
+  # Domaine public, dans la regle et dans la section TLS de l'Ingress.
+  - path: patch-ingress.yaml
+    target:
+      kind: Ingress
+      name: dilane-shop
+  # Hotes autorises et origines de confiance CSRF pour ce domaine.
+  - path: patch-configmap.yaml
+  # Politique de telechargement de l'image, pour le Deployment et le Job.
+  - path: patch-images.yaml

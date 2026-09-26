@@ -1,0 +1,26 @@
+# Manifests communs aux deux environnements.
+#
+# Cette base n'est pas destinee a etre appliquee telle quelle : le nom du
+# domaine y est un substitut et l'image n'a pas d'etiquette. Elle se deploie
+# par un overlay :
+#
+#   kubectl apply -k k8s/overlays/local
+#   kubectl apply -k k8s/overlays/production
+#
+# Deux objets restent volontairement hors de cette liste :
+#
+# - le Secret (k8s/overlays/<env>/secrets.sops.yaml) : ses valeurs sont chiffrees par
+#   SOPS. Inclus ici, "kubectl apply -k" les enverrait telles quelles au
+#   cluster. Il est applique a part, voir le README.
+# - l'Issuer et le Certificate TLS : l'autorite qui signe differe d'un
+#   environnement a l'autre. Chaque overlay apporte son fichier tls.yaml.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - 00-namespace.yaml
+  - 01-configmap.yaml
+  - 03-postgres.yaml
+  - 04-django.yaml
+  - 05-migration-job.yaml
+  - 06-ingress.yaml

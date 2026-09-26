@@ -1,0 +1,28 @@
+# IfNotPresent : l'image est figee sur l'identifiant du commit (voir
+# kustomization.yaml), donc un contenu immuable. Inutile de la retelecharger
+# a chaque demarrage si le noeud la detient deja. Un nouveau deploiement
+# change l'identifiant, ce qui force naturellement le telechargement.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: django
+  namespace: dilane-shop
+spec:
+  template:
+    spec:
+      containers:
+        - name: django
+          imagePullPolicy: IfNotPresent
+
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: django-migrate
+  namespace: dilane-shop
+spec:
+  template:
+    spec:
+      containers:
+        - name: migrate
+          imagePullPolicy: IfNotPresent

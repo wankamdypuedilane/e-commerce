@@ -22,9 +22,6 @@ metadata:
   namespace: dilane-shop
   labels:
     app.kubernetes.io/name: django
-  annotations:
-    # Raison du déploiement, visible dans kubectl rollout history
-    kubernetes.io/change-cause: "Image 0.2.0 — ajout de l'endpoint /healthz/ et des sondes"
 spec:
   replicas: 2
   selector:
@@ -42,9 +39,10 @@ spec:
     spec:
       containers:
         - name: django
-          image: dilane-shop:0.2.0
-          # L'image est chargee localement par kind, jamais telechargee
-          imagePullPolicy: IfNotPresent
+          # Nom logique, sans registre ni etiquette : chaque overlay les
+          # definit par le champ "images" de sa kustomization, avec la
+          # politique de telechargement correspondante.
+          image: dilane-shop
           ports:
             - containerPort: 8000
               name: http

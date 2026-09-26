@@ -3,12 +3,10 @@ kind: ConfigMap
 metadata:
   name: dilane-shop-config
   namespace: dilane-shop
+# DJANGO_ALLOWED_HOSTS et DJANGO_CSRF_TRUSTED_ORIGINS dependent du domaine :
+# chaque overlay les ajoute (voir overlays/*/patch-configmap.yaml).
 data:
   DJANGO_DEBUG: "False"
-  DJANGO_ALLOWED_HOSTS: "localhost,127.0.0.1,dilane-shop.local"
-  # Sans cette variable, toute soumission de formulaire est rejetée
-  # dès lors que le site est servi en HTTPS derrière un Ingress.
-  DJANGO_CSRF_TRUSTED_ORIGINS: "https://dilane-shop.local"
   DJANGO_LOG_LEVEL: "INFO"
   DB_ENGINE: "postgres"
   DB_NAME: "ecommerce"

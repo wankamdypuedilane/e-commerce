@@ -10,7 +10,7 @@ Accepté — 24/09/2026. Implémenté le 25/09/2026 : configuration SOPS, secret
 
 ### Les secrets du projet
 
-Le Secret Kubernetes `dilane-shop-secrets` porte huit clés, listées dans `k8s/02-secrets.example.yaml` :
+Le Secret Kubernetes `dilane-shop-secrets` porte huit clés, listées à la date de cette décision dans `k8s/02-secrets.example.yaml`, fichier supprimé depuis :
 
 | Clé | Rôle |
 |---|---|
@@ -25,11 +25,11 @@ Le Secret Kubernetes `dilane-shop-secrets` porte huit clés, listées dans `k8s/
 
 Toutes ne sont pas confidentielles au même degré : `STRIPE_PUBLIC_KEY` est destinée à être publique, et `EMAIL_FROM` est une adresse visible par chaque destinataire. Elles sont rangées dans le Secret parce qu'elles vont de pair avec les autres identifiants Stripe et Brevo, et non en raison de leur sensibilité.
 
-Le Secret est consommé à trois endroits : par `envFrom.secretRef` dans le Deployment `django` (`k8s/04-django.yaml`) et dans le Job de migration (`k8s/05-migration-job.yaml`), et par `secretKeyRef` sur la seule clé `DB_PASSWORD` dans le StatefulSet PostgreSQL (`k8s/03-postgres.yaml`).
+Le Secret est consommé à trois endroits : par `envFrom.secretRef` dans le Deployment `django` (`k8s/base/04-django.yaml`) et dans le Job de migration (`k8s/base/05-migration-job.yaml`), et par `secretKeyRef` sur la seule clé `DB_PASSWORD` dans le StatefulSet PostgreSQL (`k8s/base/03-postgres.yaml`).
 
 ### La procédure actuelle
 
-`k8s/02-secrets.example.yaml` est un modèle sans valeur. Il documente la création du Secret par une commande :
+`k8s/02-secrets.example.yaml` est alors un modèle sans valeur. Il documente la création du Secret par une commande :
 
 ```bash
 kubectl create secret generic dilane-shop-secrets \
@@ -117,7 +117,7 @@ L'issue #39 cite ces deux solutions parmi les candidates.
 
 **Le déploiement suppose deux outils sur le poste qui déploie.** SOPS et age doivent y être installés, dans les versions de référence, et la clé privée doit y être présente. Une étape manuelle disparaît, mais une dépendance d'outillage apparaît.
 
-**Le modèle et la documentation changent de principe.** `k8s/02-secrets.example.yaml` affirme que les secrets ne sont jamais versionnés, et le README décrit la création du Secret par `kubectl create secret`. Les deux ont été réécrits le 25/09/2026 lors de l'implémentation.
+**Le modèle et la documentation changent de principe.** `k8s/02-secrets.example.yaml` affirmait que les secrets ne sont jamais versionnés, et le README décrivait la création du Secret par `kubectl create secret`. Traité le 25/09/2026 lors de l'implémentation : le README a été réécrit, et le fichier d'exemple supprimé, le fichier chiffré listant déjà les noms des clés.
 
 ### Réserves sur la portée
 
@@ -143,7 +143,9 @@ Cette décision sera réexaminée si l'un des éléments suivants change :
 
 - Issues : #39 (gestion des secrets hors base64), #40 (VM Azure B2pts v2), #41 (k3s), #43 (registre d'images et job de déploiement)
 - [ADR-002 — Kubernetes plutôt qu'un serveur unique](002-kubernetes.md) — conséquence négative « Les Secrets Kubernetes sont encodés en base64, pas chiffrés »
-- `k8s/02-secrets.example.yaml` — procédure actuelle et avertissement sur le base64
+- `k8s/02-secrets.sops.yaml` et `k8s/overlays/production/secrets.sops.yaml` — les secrets chiffrés, un fichier par environnement
+- `.sops.yaml` — règle de chiffrement et clé publique age
+- README, section « Secrets (SOPS et age) » — installation des outils, application au cluster, restauration de la clé
 - SOPS — <https://github.com/getsops/sops>
 - age — <https://github.com/FiloSottile/age>
 
@@ -152,3 +154,11 @@ Cette décision sera réexaminée si l'un des éléments suivants change :
 L'issue #39 cite le module Vault d'une certification suivie en parallèle. Le besoin du projet, ne plus dépendre du seul base64, et le programme d'une formation sont deux choses distinctes : installer Vault ici reviendrait à choisir un outil pour une raison extérieure au projet. Vault suppose un serveur à déployer, sécuriser, sauvegarder et desceller après chaque redémarrage, pour huit secrets dans un cluster jetable.
 
 L'apprentissage de Vault fait l'objet d'un exercice séparé, hors de ce dépôt.
+
+## Addendum (26/09/2026)
+
+Deux éléments du contexte d'origine ont changé, sans affecter la décision.
+
+La cible d'hébergement n'est plus la VM Azure B2pts v2 en ARM64. La politique de régions du compte Azure for Students n'autorisait que cinq régions, dont aucune ne proposait de VM économique : les tailles disponibles y coûtaient environ 60 USD par mois, épuisant le crédit en six semaines. Le déploiement se fait désormais sur un VPS OVH (2 vCPU, 4 Go, datacenter en France), en architecture amd64. SOPS et age restant disponibles pour les deux architectures, le choix technique de cette décision tient sans changement ; l'argument ARM64 devient simplement sans objet.
+
+Les secrets sont maintenant organisés par environnement, en cohérence avec la structure Kustomize (voir l'addendum de l'ADR-002) : `k8s/overlays/local/secrets.sops.yaml` pour le poste et `k8s/overlays/production/secrets.sops.yaml` pour la production. Les deux décrivent le même objet `dilane-shop-secrets`, chiffré pour la même clé age ; seules les valeurs diffèrent, la production portant de vraies clés Stripe de test et un mot de passe de base distinct. La règle `.sops.yaml` couvre les deux, son `path_regex` incluant les sous-répertoires.

@@ -20,8 +20,8 @@ spec:
       restartPolicy: Never
       containers:
         - name: migrate
-          image: dilane-shop:0.2.0
-          imagePullPolicy: IfNotPresent
+          # Meme image que le Deployment : voir base/04-django.yaml
+          image: dilane-shop
           command: ["python", "manage.py", "migrate", "--noinput"]
           envFrom:
             - configMapRef:

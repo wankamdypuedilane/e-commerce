@@ -1,0 +1,17 @@
+# Les deux cles qui dependent du domaine. Un correctif de fusion ajoute
+# ses cles a celles de la base, sans effacer les autres.
+#
+# localhost et 127.0.0.1 sont conserves a cote du domaine public : les
+# sondes de vie et de disponibilite interrogent /healthz/ avec l'en-tete
+# Host: localhost. Les retirer ferait repondre 400 a Django, et aucun pod
+# ne deviendrait pret.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dilane-shop-config
+  namespace: dilane-shop
+data:
+  DJANGO_ALLOWED_HOSTS: "localhost,127.0.0.1,dilane-shop.store"
+  # Sans cette variable, toute soumission de formulaire est rejetee
+  # des lors que le site est servi en HTTPS derriere un Ingress.
+  DJANGO_CSRF_TRUSTED_ORIGINS: "https://dilane-shop.store"
