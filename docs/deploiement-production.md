@@ -609,3 +609,28 @@ Revenir en arrière consiste à remettre l'empreinte précédente et à rejouer 
 5. **L'adresse dans `~/.ssh/config`.** Le bloc de l'étape 2.2 porte l'adresse actuelle en dur. Si le VPS est recréé, elle change : c'est le premier endroit à corriger.
 6. **La date de reprise de ce document.** Les versions y sont écrites en dur : k3s v1.36.4+k3s1, ingress-nginx v1.15.1, cert-manager v1.16.2. Rejouer la procédure des mois plus tard installera peut-être autre chose ; les URLs sont épinglées, donc reproductibles, mais à confronter aux versions alors prises en charge.
 7. **Le compte administrateur** créé à l'étape 8.2 n'est pas inventorié. Décidez où sa trace est conservée — pas dans ce dépôt.
+
+## Pare-feu — fermeture de l'API Kubernetes (26/09/2026)
+
+Par défaut, k3s expose son API (6443) et le kubelet (10250) sur toutes les
+interfaces, donc sur Internet. Le cluster étant piloté depuis le serveur ou
+par SSH, ces ports n'ont aucune raison d'être joignables de l'extérieur.
+
+Deux règles iptables les bloquent sur l'interface publique (ens3), sans
+toucher au trafic interne de k3s ni au port SSH. ufw est écarté : il entre
+en conflit avec le réseau de k3s. Les règles sont rendues permanentes par
+iptables-persistent (qui désinstalle ufw au passage).
+
+```bash
+# SERVEUR — interface publique = ens3 (vérifier avec : ip route get 1.1.1.1)
+sudo iptables -I INPUT -i ens3 -p tcp --dport 6443 -j DROP
+sudo iptables -I INPUT -i ens3 -p tcp --dport 10250 -j DROP
+sudo DEBIAN_FRONTEND=noninteractive apt-get install -y iptables-persistent
+sudo netfilter-persistent save
+```
+
+Vérification, depuis un poste extérieur :
+- `6443` doit être injoignable (connexion refusée ou expirée).
+- SSH (22) et le site (80/443) doivent répondre normalement.
+
+k3s n'écoute pas ces ports en IPv6 : aucune règle ip6tables n'est nécessaire.
