@@ -10,6 +10,10 @@ on:
   pull_request:
   workflow_dispatch:
 
+permissions:
+  contents: read
+  packages: write
+
 jobs:
   ci:
     # Version épinglée : ubuntu-latest bascule sur Ubuntu 26 le 19/10/2026.
@@ -86,6 +90,20 @@ jobs:
             docker compose logs web
             exit 1
           fi
+
+      # Publication de l'image de production dans GHCR, uniquement sur main
+      # (pas sur les pull requests). GITHUB_TOKEN est fourni par GitHub, aucun
+      # secret à configurer. Deux étiquettes : latest et le hash du commit.
+      - name: Publish image to GHCR
+        if: github.ref == 'refs/heads/main'
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+          IMAGE=ghcr.io/${{ github.repository_owner }}/dilane-shop
+          docker tag dilane-shop:0.1.0 $IMAGE:latest
+          docker tag dilane-shop:0.1.0 $IMAGE:${{ github.sha }}
+          docker push $IMAGE:latest
+          docker push $IMAGE:${{ github.sha }}
+          echo "Image publiée : $IMAGE:latest et :${{ github.sha }}"
 
       - name: Stop stack
         if: always()
