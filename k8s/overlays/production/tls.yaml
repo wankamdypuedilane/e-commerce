@@ -72,6 +72,6 @@ spec:
   dnsNames:
     - dilane-shop.store
   issuerRef:
-    name: letsencrypt-test
+    name: letsencrypt-production
     kind: ClusterIssuer
     group: cert-manager.io
