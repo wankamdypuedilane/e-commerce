@@ -1,6 +1,6 @@
 # Observabilité — Prometheus et Grafana (production)
 
-Issue #44. Collecte et visualisation des métriques que Django expose sur `/metrics` depuis #45 : les quatre signaux d'or (latence, trafic, erreurs, saturation). Issue #48 : alertes par courriel, évaluées par Grafana lui-même (voir [Alertes](#alertes)).
+Issue #44. Collecte et visualisation des métriques que Django expose sur `/metrics` depuis #45 : les quatre signaux d'or (latence, trafic, erreurs, saturation). Issue #48 : alertes par courriel, évaluées par Grafana lui-même (voir [Alertes](#alertes)). Un test k6 du catalogue permet d'observer ces signaux sous charge (voir [Test de charge k6](#test-de-charge-k6)).
 
 Les commandes suivent les conventions de [deploiement-production.md](deploiement-production.md) : **SERVEUR** désigne un shell sur le VPS, dans `~/e-commerce` ; **PORTABLE** le poste qui détient la clé age et l'alias SSH `$HOTE_SSH`.
 
@@ -226,7 +226,7 @@ Attendu : `"status":"ok"`, et le courriel reçu. Vérifier aussi qu'il n'est pas
 
 **2. La chaîne complète : règle → politique → courriel.** Le test du point de contact ne passe ni par une règle ni par la politique. Pour les éprouver sans panne, créer une règle temporaire qui se déclenche d'elle-même : *Alerting → Alert rules → New alert rule*, requête `sum(rate(django_http_requests_total{job="django"}[5m]))`, seuil *IS ABOVE* `0` (toujours vrai : les collectes de Prometheus suffisent), dossier « Dilane Shop », pending period `1m`. Le courriel `[FIRING:1] …` arrive en 2 à 3 minutes (vérifié dans l'environnement d'essai : environ 2 minutes, dossier provisionné compris) ; supprimer ensuite la règle, le courriel `[RESOLVED]` suit dans les 5 minutes. Une règle créée dans l'interface disparaît de toute façon au prochain redémarrage de Grafana, ce qui garantit qu'aucun test ne reste en place.
 
-**3. Une vraie règle, par un test de charge.** La règle « Latence p95 élevée » sera déclenchée par un **test de charge k6** : chaque pod Django n'a que 3 workers gunicorn synchrones, une charge soutenue sur les pages du catalogue fait monter les requêtes en attente, et donc le p95 au-delà d'une seconde. Le même test vérifie au passage la garde de volume (plus de 20 requêtes en 5 minutes) et, selon la charge atteinte, la saturation du tableau de bord. Ce test de charge est à écrire ; à lancer hors des heures d'affluence, depuis une machine extérieure au VPS (k6 sur le VPS consommerait la mémoire qu'il est censé éprouver), en surveillant `kubectl top pods -A`. La règle 5xx ne se provoque pas proprement en production (aucune route n'échoue volontairement) : elle a été vérifiée par les tests `promtool` décrits plus haut.
+**3. Une vraie règle, par un test de charge.** Le script k6 du catalogue produit un trafic réel mesurable dans les quatre signaux d'or, et peut faire passer la règle « Latence p95 élevée » en *Pending* puis *Alerting* **si la latence mesurée dans Django dépasse vraiment 1 seconde** sous cette charge. Ce n'est pas garanti, ni même probable avec 6 à 8 utilisateurs virtuels : voir [Test de charge k6](#test-de-charge-k6). Pour éprouver la chaîne d'envoi, le test 2 (règle temporaire) reste la méthode fiable ; il est distinct du test k6. La règle 5xx ne se provoque pas proprement en production (aucune route n'échoue volontairement) : elle a été vérifiée par les tests `promtool` décrits plus haut.
 
 La règle « Site injoignable » peut être éprouvée pour de bon lors d'une maintenance planifiée, par `kubectl scale -n dilane-shop deploy/django --replicas=0` puis `--replicas=2` : c'est une vraie coupure du site, à réserver à ce cas.
 
@@ -235,6 +235,108 @@ La règle « Site injoignable » peut être éprouvée pour de bon lors d'une ma
 - **État en mémoire.** L'Alertmanager intégré garde ses silences et son journal d'envoi dans la base SQLite de Grafana, donc dans l'`emptyDir` : un redémarrage de Grafana efface les silences, et une alerte encore active peut être notifiée une seconde fois.
 - **Quota Brevo.** Les courriels d'alerte consomment le même quota d'envoi que les courriels transactionnels de la boutique. Le groupement par règle et le rappel toutes les 4 heures limitent le volume.
 - **Un seul canal.** Si Brevo ou la boîte de réception est indisponible, l'alerte n'arrive pas, et rien ne le signale. Un second point de contact (webhook, messagerie) serait le remède.
+
+## Test de charge k6
+
+Le script [scripts/k6/catalogue.js](../scripts/k6/catalogue.js) produit un trafic de lecture sur le catalogue, pour observer les quatre signaux d'or dans Grafana et, si la latence réelle le permet, voir la règle « Latence p95 élevée » réagir.
+
+### Ce que fait le script
+
+Chaque utilisateur virtuel enchaîne deux **GET**, avec une pause de 0,5 s après chacun :
+
+- `/` : la page d'accueil, liste paginée des produits ;
+- `/api/produits/?item-name=livre` : la recherche de produits, en JSON.
+
+Aucun checkout, paiement, création de compte ni écriture.
+
+| Mode | Profil | Volume |
+| --- | --- | --- |
+| `smoke` (défaut) | 1 utilisateur virtuel, 5 itérations | 10 requêtes |
+| `charge` | montée 1 min, palier 8 min, descente 1 min | 6 utilisateurs virtuels par défaut, 8 au plus (`VUS`) |
+
+Chaque utilisateur virtuel attend la réponse avant d'envoyer la requête suivante. Le débit est donc borné : environ 2 requêtes par seconde et par utilisateur virtuel tant que les réponses sont rapides, soit environ 12 req/s à 6 VUS et 16 req/s à 8 VUS. Il baisse si le site ralentit.
+
+### Garde-fous
+
+- **Cible obligatoire et restreinte.** `CIBLE` n'accepte que `https://dilane-shop.store`, ou une adresse locale explicite : `http(s)://localhost`, `127.0.0.1` ou `[::1]` (port facultatif), ou `https://dilane-shop.local` (cluster kind, seule cible pour laquelle le certificat n'est pas vérifié). L'origine est comparée en entier : `http://dilane-shop.store`, `https://dilane-shop.store.exemple.com`, `https://dilane-shop.store@exemple.com`, une IP privée ou un chemin sont refusés.
+- **Charge sur la production : consentement explicite.** `MODE=charge` avec la cible de production exige `-e AUTORISER_CHARGE_PROD=oui`, exactement.
+- **Plafond de 8 utilisateurs virtuels.** `VUS` hors de 1 à 8 : refus. Les options `--vus`, `--duration` et `--iterations`, qui remplaceraient les scénarios du script, sont détectées avant le premier utilisateur virtuel et interrompent le test.
+- **Arrêt automatique**, 10 s après le début au plus tôt, dès que l'un de ces seuils est franchi :
+  - 2 % de requêtes en échec (erreur réseau ou statut ≥ 400) ;
+  - p95 côté client de 5 secondes ;
+  - moins de 98 % de réponses HTTP 200.
+
+Le smoke dure environ 5 secondes, moins que ce délai : ses seuils sont jugés à la fin, et un seul échec sur ses 10 requêtes suffit à le faire échouer.
+
+Un refus survient avant tout envoi : aucune requête ne part. Les requêtes du test portent le User-Agent `dilane-shop-k6-catalogue/1.0`, qui permet de les isoler dans les journaux d'ingress-nginx. Codes de sortie de k6 : `0` réussite, `99` seuil franchi, `107` refus à la lecture des variables, `108` refus au contrôle des scénarios.
+
+### Lancer le test
+
+Depuis le **portable** ou une autre machine extérieure au VPS, jamais depuis le VPS : k6 y consommerait la mémoire et le processeur qu'il est censé éprouver. Référence : k6 v2.3.0 (le script fonctionne aussi avec la 1.8.1). Sans k6 installé, l'image officielle suffit :
+
+```bash
+# PORTABLE — depuis la racine du dépôt
+alias k6='docker run --rm -i -v "$PWD/scripts/k6:/scripts/k6:ro" -w / grafana/k6:2.3.0'
+```
+
+**Smoke** : 10 requêtes, pour vérifier que le script et la cible répondent. À faire avant toute charge.
+
+```bash
+k6 run -e CIBLE=https://dilane-shop.store scripts/k6/catalogue.js
+```
+
+**Charge** : 10 minutes. À lancer hors des heures d'affluence, avec le tableau de bord ouvert, et en surveillant la mémoire du VPS (`free -m`, `kubectl top pods -A`) dans un autre terminal.
+
+```bash
+k6 run -e CIBLE=https://dilane-shop.store -e MODE=charge \
+  -e AUTORISER_CHARGE_PROD=oui scripts/k6/catalogue.js
+# 8 utilisateurs virtuels au lieu de 6 :
+k6 run -e CIBLE=https://dilane-shop.store -e MODE=charge -e VUS=8 \
+  -e AUTORISER_CHARGE_PROD=oui scripts/k6/catalogue.js
+```
+
+Contre le cluster kind du poste : `-e CIBLE=https://dilane-shop.local`. Contre un Django lancé à la main : `-e CIBLE=http://localhost:8000`. Pour interrompre un test en cours : `Ctrl+C`.
+
+### Quoi observer dans Grafana
+
+Tableau de bord *Dilane Shop — signaux d'or*, période « Last 30 minutes », pendant et juste après le test :
+
+| Panneau | Attendu pendant le palier |
+| --- | --- |
+| Pods Django collectés | 2 en permanence. Une baisse signale un pod redémarré, par exemple tué pour dépassement de mémoire. |
+| Trafic — requêtes / s | le débit de k6 (environ 12 req/s à 6 VUS), réparti à peu près également entre les deux pods, en plus du trafic réel. La montée et la descente d'une minute sont visibles. |
+| Erreurs — part des réponses | 5xx à 0. Les 4xx n'augmentent pas : les deux routes répondent 200. |
+| Latence — p50 et p95 | la latence mesurée **dans Django**. C'est elle que surveille la règle d'alerte. |
+| Saturation — requêtes en cours | 0 à 1 le plus souvent. 3 sur un pod veut dire que ses 3 workers sont tous occupés. |
+| Latence p95 par route | `home` et `search_products` séparément. |
+
+Dans *Alerting → Alert rules*, la règle « Latence p95 élevée » est en « Normal (NoData) » tant que le site reçoit moins de 20 requêtes en 5 minutes (garde de volume). Pendant le test, elle passe à **« Normal »** : elle est alors réellement évaluée. Elle ne passe en *Pending*, puis en *Alerting* 2 minutes plus tard, que si le p95 mesuré dans Django dépasse 1 seconde. Le courriel suit alors dans les 30 s (`group_wait`), puis un courriel de résolution après la fin du test.
+
+Côté serveur : `kubectl top pods -n dilane-shop` pendant le palier, et après le test, `kubectl get pods -n dilane-shop` pour vérifier qu'aucun redémarrage n'est apparu (colonne `RESTARTS`).
+
+### Latence k6 et latence Grafana : deux mesures différentes
+
+| | k6 (`http_req_duration`) | Grafana (`django_http_requests_latency_seconds`) |
+| --- | --- | --- |
+| Point de mesure | le client, à l'extérieur | l'intergiciel de Django, dans le pod |
+| Commence | à l'envoi de la requête, connexion et TLS déjà établis | quand un worker gunicorn prend la requête en charge |
+| Inclut | réseau aller-retour (portable ↔ VPS), ingress-nginx, **attente d'un worker libre**, traitement Django, transfert de la réponse | traitement Django seulement (intergiciels, vue, base de données, rendu) |
+| Portée | les requêtes du test seulement | tout le trafic, visiteurs réels compris, hors `/metrics` et `/healthz/` |
+| Calcul du p95 | exact, sur toutes les requêtes du test (montée et descente comprises) | estimé par l'histogramme (bornes 0,5 s, 1 s, 2,5 s…), sur une fenêtre glissante de 5 minutes |
+
+La latence k6 est donc **toujours plus élevée** que celle de Grafana, de la durée du réseau au moins. Surtout, quand tous les workers sont occupés, une requête attend dans la file de gunicorn **avant** que Django ne commence à la mesurer : cette attente apparaît dans k6, pas dans Grafana. Un p95 k6 élevé avec un p95 Grafana bas signale donc un manque de workers ou un réseau lent, pas une application lente. La règle d'alerte ne voit que le second cas.
+
+### Pourquoi la règle p95 ne se déclenchera probablement pas
+
+Rien ne garantit que cette charge fasse passer la règle en *Alerting*, et c'est même peu probable :
+
+- **La charge est bornée.** Chaque utilisateur virtuel attend sa réponse avant de continuer : au plus 8 requêtes sont en cours à la fois, pour 6 workers (2 pods × 3). Au pire, deux requêtes attendent un worker, et cette attente est invisible pour Django (voir ci-dessus).
+- **Le catalogue est léger.** La page d'accueil pagine par 4 produits, et la recherche est limitée à 24 résultats.
+- **Mesure locale de référence**, sur un seul pod Django (3 workers gunicorn, 2 CPU, SQLite, catalogue de démonstration de 30 objets), 6 VUS pendant 10 minutes : 6 406 requêtes, environ 11,9 req/s en palier, 100 % de 200, p95 k6 de 7,6 ms, p95 Django de l'ordre de 10 ms, 6 % de CPU pour Django, règle restée « Normal ». Ce n'est pas le VPS (processeur, PostgreSQL, réseau, TLS et ingress diffèrent), mais l'écart avec le seuil d'une seconde est de deux ordres de grandeur.
+
+Si le p95 de Grafana reste sous 1 s, c'est un **résultat** : l'application tient cette charge. Il ne faut pas monter les VUS pour forcer l'alerte : le plafond de 8 protège le VPS, qui n'a pas de swap. Pour vérifier la chaîne « règle → politique → courriel », utiliser la règle temporaire décrite dans [Tester une alerte](#tester-une-alerte-sans-attendre-une-panne) : c'est un test distinct du test k6.
+
+Le catalogue de démonstration ne contient aucun produit dont le titre comporte « livre » : sur une base chargée avec ce seul jeu de données, la recherche rend une liste vide et coûte moins cher qu'une recherche fructueuse.
 
 ## Secret Grafana
 
