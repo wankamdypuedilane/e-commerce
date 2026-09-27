@@ -1,0 +1,165 @@
+# Prometheus (issue #44) : collecte les métriques des pods Django.
+#
+# Mémoire : la base ne contient que quelques milliers de séries (deux pods,
+# une vingtaine de routes, un histogramme à dix bornes). Prometheus 3 règle
+# de lui-même GOMEMLIMIT à 90 % de la limite du conteneur : le ramasse-miettes
+# de Go devient plus agressif à l'approche du plafond, plutôt que de le
+# franchir et d'être tué.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: prometheus-donnees
+  namespace: observabilite
+  labels:
+    app.kubernetes.io/name: prometheus
+    app.kubernetes.io/part-of: observabilite
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 2Gi
+  # Classe par défaut du cluster : local-path sous k3s, en
+  # WaitForFirstConsumer. La revendication reste Pending jusqu'au
+  # démarrage du pod, ce qui est normal.
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: prometheus
+  namespace: observabilite
+  labels:
+    app.kubernetes.io/name: prometheus
+    app.kubernetes.io/part-of: observabilite
+spec:
+  replicas: 1
+  # Recreate, et non RollingUpdate : l'ancien pod s'arrête avant que le
+  # nouveau démarre. Une mise à jour ne double donc jamais la mémoire
+  # consommée, et la base TSDB, verrouillée par un seul processus, n'est
+  # jamais ouverte par deux pods à la fois.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: prometheus
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: prometheus
+        app.kubernetes.io/part-of: observabilite
+    spec:
+      serviceAccountName: prometheus
+      priorityClassName: observabilite-faible-priorite
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534        # nobody, l'utilisateur de l'image
+        runAsGroup: 65534
+        fsGroup: 65534
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        # local-path crée des volumes hostPath, qui ignorent fsGroup : même
+        # correctif que pour les médias de Django (04-django.yaml). Sans ce
+        # chown, Prometheus échouerait à écrire sa base si le répertoire
+        # appartient à root.
+        - name: preparer-donnees
+          # Même image que Prometheus : elle contient busybox, donc chown.
+          # Aucune image supplémentaire à télécharger.
+          image: prom/prometheus:v3.13.3@sha256:6976aa8a60fec930796ce5772b8d12da7a318a5daa8d40d69c5c7819a05eeed7
+          command: ["/bin/sh", "-c", "chown -R 65534:65534 /prometheus"]
+          securityContext:
+            runAsNonRoot: false
+            runAsUser: 0        # le chown exige root ; lui seul l'obtient
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+              add: ["CHOWN"]
+          volumeMounts:
+            - name: donnees
+              mountPath: /prometheus
+          resources:
+            requests:
+              memory: "16Mi"
+              cpu: "10m"
+            limits:
+              memory: "32Mi"
+              cpu: "100m"
+      containers:
+        - name: prometheus
+          # Étiquette lisible, et empreinte qui garantit l'image exacte même
+          # si l'étiquette était republiée.
+          image: prom/prometheus:v3.13.3@sha256:6976aa8a60fec930796ce5772b8d12da7a318a5daa8d40d69c5c7819a05eeed7
+          args:
+            - --config.file=/etc/prometheus/prometheus.yml
+            - --storage.tsdb.path=/prometheus
+            - --storage.tsdb.retention.time=7d
+            # Garde-fou : le volume fait 2 Gi. Si la base grossissait plus
+            # que prévu, les blocs les plus anciens seraient supprimés avant
+            # d'avoir 7 jours plutôt que de remplir le disque.
+            - --storage.tsdb.retention.size=1500MB
+            - --web.listen-address=:9090
+          ports:
+            - containerPort: 9090
+              name: http
+          readinessProbe:
+            httpGet:
+              path: /-/ready
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 15
+          livenessProbe:
+            httpGet:
+              path: /-/healthy
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            failureThreshold: 3
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          # Mesuré sous Prometheus v3.13.3 avec cette configuration et une
+          # cible Django sous trafic : 21 à 35 Mi. La limite laisse de la
+          # marge pour le compactage des blocs et la relecture du journal
+          # (WAL) au redémarrage, qui gonflent brièvement la mémoire.
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "128Mi"
+              cpu: "500m"
+          volumeMounts:
+            - name: config
+              mountPath: /etc/prometheus
+              readOnly: true
+            - name: donnees
+              mountPath: /prometheus
+      volumes:
+        - name: config
+          configMap:
+            name: prometheus-config
+        - name: donnees
+          persistentVolumeClaim:
+            claimName: prometheus-donnees
+
+---
+# Accès interne uniquement, pour Grafana. Aucun Ingress : Prometheus n'est
+# joignable que depuis le cluster, ou par redirection de port.
+apiVersion: v1
+kind: Service
+metadata:
+  name: prometheus
+  namespace: observabilite
+  labels:
+    app.kubernetes.io/name: prometheus
+    app.kubernetes.io/part-of: observabilite
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: prometheus
+  ports:
+    - port: 9090
+      targetPort: http
+      name: http

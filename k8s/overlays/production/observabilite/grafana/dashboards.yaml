@@ -1,0 +1,13 @@
+# Fournisseur de tableaux de bord : charge les fichiers JSON montés dans
+# /var/lib/grafana/dashboards (ConfigMap grafana-tableaux-de-bord).
+apiVersion: 1
+providers:
+  - name: dilane-shop
+    folder: Dilane Shop
+    type: file
+    # Les modifications faites dans l'interface ne sont pas enregistrables :
+    # la source de vérité reste le fichier versionné dans le dépôt.
+    allowUiUpdates: false
+    disableDeletion: true
+    options:
+      path: /var/lib/grafana/dashboards

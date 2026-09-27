@@ -1,0 +1,62 @@
+# Configuration de Prometheus (issue #44).
+#
+# Une seule tâche : les métriques applicatives de Django. Ni le cluster, ni
+# les nœuds, ni Prometheus lui-même ne sont collectés, pour garder la base
+# de séries — et donc la mémoire — aussi petite que possible.
+global:
+  # 30 s suffisent pour un tableau de bord et divisent par deux le volume
+  # par rapport au réglage par défaut (15 s).
+  scrape_interval: 30s
+  scrape_timeout: 10s
+  evaluation_interval: 30s
+
+scrape_configs:
+  - job_name: django
+    scheme: http
+    metrics_path: /metrics
+
+    # Découverte des pods, et non du Service : le Service répartit les
+    # requêtes entre les replicas, si bien que chaque collecte tomberait sur
+    # l'un ou l'autre au hasard. Ici, chaque pod est une cible distincte,
+    # interrogée sur son IP, sans passer par l'Ingress.
+    kubernetes_sd_configs:
+      - role: pod
+        # Restreint la surveillance de l'API à cet espace de noms : un Role
+        # suffit (01-prometheus-rbac.yaml), pas de ClusterRole.
+        namespaces:
+          names: [dilane-shop]
+        # Filtre appliqué par l'API elle-même : Prometheus ne reçoit que les
+        # pods Django, pas ceux de PostgreSQL, du Job de migration ou des
+        # sauvegardes.
+        selectors:
+          - role: pod
+            label: app.kubernetes.io/name=django
+
+    relabel_configs:
+      # Consentement explicite du pod, par annotation (recommandation du
+      # rapport de #45). Retirer l'annotation arrête la collecte sans
+      # toucher à cette configuration.
+      - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+        regex: "true"
+        action: keep
+      # Un pod qui démarre ou s'arrête n'a rien à rendre.
+      - source_labels: [__meta_kubernetes_pod_phase]
+        regex: Running
+        action: keep
+      # La découverte produit une cible par port de conteneur, et une cible
+      # sans port pour chaque conteneur qui n'en déclare aucun — ici le
+      # conteneur d'initialisation preparer-medias. On ne garde que le port
+      # annoncé par prometheus.io/port.
+      - source_labels: [__meta_kubernetes_pod_container_port_number]
+        target_label: __meta_kubernetes_pod_annotation_prometheus_io_port
+        action: keepequal
+      # Chemin annoncé par le pod, s'il en annonce un.
+      - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+        regex: (.+)
+        target_label: __metrics_path__
+      # Étiquettes lisibles. Le nom du pod distingue les deux replicas ;
+      # l'étiquette instance garde l'adresse IP:port effectivement collectée.
+      - source_labels: [__meta_kubernetes_namespace]
+        target_label: namespace
+      - source_labels: [__meta_kubernetes_pod_name]
+        target_label: pod

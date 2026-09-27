@@ -1,0 +1,49 @@
+# Droits de Prometheus : lire les pods de dilane-shop, et rien d'autre.
+#
+# Un Role et non un ClusterRole : la découverte est restreinte à l'espace de
+# noms dilane-shop (champ namespaces de prometheus.yml), Prometheus n'a donc
+# besoin de voir aucun autre espace de noms, ni les nœuds. Seuls les pods
+# sont lus : la découverte « role: pod » n'interroge ni les endpoints ni les
+# services. Aucun droit d'écriture, aucun accès aux Secrets.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: prometheus
+  namespace: observabilite
+  labels:
+    app.kubernetes.io/name: prometheus
+    app.kubernetes.io/part-of: observabilite
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: prometheus-decouverte
+  namespace: dilane-shop
+  labels:
+    app.kubernetes.io/name: prometheus
+    app.kubernetes.io/part-of: observabilite
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch"]
+
+---
+# Accorde le Role ci-dessus, défini dans dilane-shop, au ServiceAccount qui
+# vit dans observabilite.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: prometheus-decouverte
+  namespace: dilane-shop
+  labels:
+    app.kubernetes.io/name: prometheus
+    app.kubernetes.io/part-of: observabilite
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: prometheus-decouverte
+subjects:
+  - kind: ServiceAccount
+    name: prometheus
+    namespace: observabilite

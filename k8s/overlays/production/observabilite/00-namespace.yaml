@@ -1,0 +1,32 @@
+# Espace de noms de la pile d'observabilité (issue #44).
+#
+# Séparé de dilane-shop : Prometheus et Grafana ne partagent ni Secret ni
+# ServiceAccount avec l'application, et la pile se supprime d'un bloc
+# (kubectl delete namespace observabilite) sans toucher à la boutique.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: observabilite
+  labels:
+    app.kubernetes.io/name: observabilite
+    app.kubernetes.io/part-of: observabilite
+
+---
+# Priorité inférieure à celle de l'application (0 par défaut).
+#
+# Le VPS n'a que 4 Go et aucun swap. Si le nœud manque de mémoire, ou si un
+# déploiement de Django ne trouve plus de place pour son pod supplémentaire
+# (maxSurge: 1), l'ordonnanceur et le kubelet sacrifient d'abord les pods de
+# plus faible priorité : Prometheus et Grafana partent avant Django et
+# PostgreSQL. preemptionPolicy: Never interdit l'inverse — un pod de
+# supervision n'évince jamais un pod de l'application pour démarrer.
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: observabilite-faible-priorite
+  labels:
+    app.kubernetes.io/part-of: observabilite
+value: -100
+globalDefault: false
+preemptionPolicy: Never
+description: "Supervision : cède la place à l'application en cas de manque de ressources."

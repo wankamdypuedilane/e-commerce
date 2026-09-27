@@ -1,0 +1,183 @@
+# Grafana (issue #44) : visualisation des métriques de Prometheus.
+#
+# Tout est provisionné depuis le dépôt : source de données, tableau de bord,
+# compte administrateur. La base interne de Grafana (SQLite) n'a donc rien à
+# conserver et vit dans un emptyDir, recréé vide à chaque démarrage : aucun
+# volume persistant, et un mot de passe changé dans le Secret s'applique au
+# prochain redémarrage. Contrepartie : un tableau de bord créé à la main
+# dans l'interface disparaît au redémarrage — il faut l'exporter en JSON
+# dans grafana/ pour le conserver.
+#
+# Pas d'Ingress : Grafana n'est joignable que par redirection de port, voir
+# docs/observabilite.md.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: grafana
+  namespace: observabilite
+  labels:
+    app.kubernetes.io/name: grafana
+    app.kubernetes.io/part-of: observabilite
+spec:
+  replicas: 1
+  # Ancien pod arrêté avant le démarrage du nouveau : une mise à jour ne
+  # double jamais la mémoire consommée.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: grafana
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: grafana
+        app.kubernetes.io/part-of: observabilite
+    spec:
+      priorityClassName: observabilite-faible-priorite
+      # Grafana n'appelle pas l'API Kubernetes : aucun jeton monté.
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 472          # utilisateur grafana de l'image
+        runAsGroup: 0           # groupe attendu par l'image
+        fsGroup: 472            # honoré par emptyDir, contrairement à hostPath
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: grafana
+          image: grafana/grafana:12.4.11@sha256:3ea272e5cab64a4a62240c682e2c62433b25614d956d44c299a10cb6994f6f2e
+          ports:
+            - containerPort: 3000
+              name: http
+          env:
+            # Compte administrateur lu dans le Secret grafana-admin, chiffré
+            # par SOPS (grafana-admin.sops.yaml). La syntaxe __FILE lit la
+            # valeur dans un fichier monté plutôt que dans une variable
+            # d'environnement, visible par « kubectl describe ».
+            - name: GF_SECURITY_ADMIN_USER__FILE
+              value: /etc/grafana-admin/admin-user
+            - name: GF_SECURITY_ADMIN_PASSWORD__FILE
+              value: /etc/grafana-admin/admin-password
+            # Accès par redirection de port uniquement.
+            - name: GF_SERVER_ROOT_URL
+              value: http://localhost:3000/
+            - name: GF_USERS_ALLOW_SIGN_UP
+              value: "false"
+            - name: GF_AUTH_ANONYMOUS_ENABLED
+              value: "false"
+            # Allègement : chaque fonction coupée ici est un service de
+            # moins en mémoire et un appel sortant de moins.
+            # - pas d'alertes Grafana : l'alerte passera par Alertmanager (#48) ;
+            - name: GF_UNIFIED_ALERTING_ENABLED
+              value: "false"
+            # - pas de télémétrie ni de vérification de mises à jour ;
+            - name: GF_ANALYTICS_REPORTING_ENABLED
+              value: "false"
+            - name: GF_ANALYTICS_CHECK_FOR_UPDATES
+              value: "false"
+            - name: GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES
+              value: "false"
+            - name: GF_NEWS_NEWS_FEED_ENABLED
+              value: "false"
+            # - aucun greffon téléchargé au démarrage ;
+            - name: GF_PLUGINS_PREINSTALL_DISABLED
+              value: "true"
+            # - ni clés de signature de greffons récupérées sur grafana.com :
+            #   seuls les greffons intégrés à l'image sont utilisés ;
+            - name: GF_PLUGINS_PUBLIC_KEY_RETRIEVAL_DISABLED
+              value: "true"
+            # - aucun appel à Gravatar pour les avatars.
+            - name: GF_SECURITY_DISABLE_GRAVATAR
+              value: "true"
+            # Journaux sur la sortie standard seulement : le système de
+            # fichiers du conteneur est en lecture seule.
+            - name: GF_LOG_MODE
+              value: console
+            # Grafana, écrit en Go, ne lit pas la limite du conteneur : sans
+            # ce plafond, son ramasse-miettes laisserait le tas approcher la
+            # limite et le noyau tuerait le processus. Environ 80 % de la
+            # limite, pour laisser de la marge à la mémoire hors tas.
+            - name: GOMEMLIMIT
+              value: "150MiB"
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 15
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            failureThreshold: 3
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          # Mesuré sous Grafana 12.4.11 avec ces réglages, tableau de bord
+          # ouvert : 102 à 104 Mi.
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "50m"
+            limits:
+              memory: "192Mi"
+              cpu: "500m"
+          volumeMounts:
+            - name: donnees
+              mountPath: /var/lib/grafana
+            - name: temporaire
+              mountPath: /tmp
+            - name: admin
+              mountPath: /etc/grafana-admin
+              readOnly: true
+            - name: sources-de-donnees
+              mountPath: /etc/grafana/provisioning/datasources
+              readOnly: true
+            - name: fournisseurs
+              mountPath: /etc/grafana/provisioning/dashboards
+              readOnly: true
+            - name: tableaux-de-bord
+              mountPath: /var/lib/grafana/dashboards
+              readOnly: true
+      volumes:
+        - name: donnees
+          emptyDir:
+            sizeLimit: 256Mi
+        - name: temporaire
+          emptyDir:
+            sizeLimit: 64Mi
+        - name: admin
+          secret:
+            secretName: grafana-admin
+        - name: sources-de-donnees
+          configMap:
+            name: grafana-sources-de-donnees
+        - name: fournisseurs
+          configMap:
+            name: grafana-fournisseurs
+        - name: tableaux-de-bord
+          configMap:
+            name: grafana-tableaux-de-bord
+
+---
+# Accès interne uniquement. Cible de la redirection de port.
+apiVersion: v1
+kind: Service
+metadata:
+  name: grafana
+  namespace: observabilite
+  labels:
+    app.kubernetes.io/name: grafana
+    app.kubernetes.io/part-of: observabilite
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: grafana
+  ports:
+    - port: 3000
+      targetPort: http
+      name: http
