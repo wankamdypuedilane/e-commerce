@@ -443,3 +443,38 @@ def healthz(request):
         return JsonResponse({"status": "degraded", "database": "unreachable"}, status=503)
 
     return JsonResponse({"status": "ok", "database": "reachable"})
+
+
+# En-tetes qu'ajoute le controleur Ingress a toute requete venue d'Internet.
+# Leur presence signe un acces public ; un scraper interne, qui appelle le pod
+# directement, n'en pose aucun.
+ENTETES_DE_PROXY = ("HTTP_X_FORWARDED_FOR", "HTTP_X_REAL_IP", "HTTP_FORWARDED")
+
+
+def metrics(request):
+    """Expose les metriques Prometheus (issue #45).
+
+    **Reservee au reseau interne du cluster.** L'Ingress route `/` en
+    `Prefix`, donc tout chemin, y compris celui-ci : sans ce controle, les
+    metriques seraient publiques sur Internet. Elles y reveleraient le
+    trafic, les erreurs et les routes de l'application.
+
+    Une requete arrivee par l'Ingress porte X-Forwarded-For, que le
+    controleur renseigne lui-meme : un client ne peut pas l'effacer. Sa
+    presence fait donc repondre 404 — et non 403, qui confirmerait
+    l'existence de l'endpoint, comme pour les pages de commande (issue #70).
+
+    Prometheus, lui, interrogera le pod ou le service directement, sans
+    passer par l'Ingress : aucun en-tete de proxy, acces autorise.
+    """
+    from django.http import Http404
+
+    from . import metrics as mesures
+
+    if any(entete in request.META for entete in ENTETES_DE_PROXY):
+        raise Http404("Metriques non exposees publiquement")
+
+    return HttpResponse(
+        mesures.exposition(),
+        content_type=mesures.CONTENT_TYPE_LATEST,
+    )

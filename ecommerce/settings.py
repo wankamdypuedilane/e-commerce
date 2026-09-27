@@ -64,6 +64,10 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
+    # En tete, donc le plus a l'exterieur : la latence mesuree couvre
+    # toute la pile. Il n'ajoute ni ne modifie aucun en-tete, et ne
+    # change donc rien a l'ordre des intergiciels de securite qui suivent.
+    'shop.middleware.PrometheusMetricsMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.middleware.csp.ContentSecurityPolicyMiddleware',

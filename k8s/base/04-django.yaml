@@ -15,6 +15,34 @@ spec:
       name: http
 
 ---
+# Medias televerses depuis l'administration (images produits).
+#
+# Sans ce volume, MEDIA_ROOT pointe sur la couche inscriptible du pod : une
+# image televersee disparait au redemarrage du pod, et n'est visible que
+# depuis le replica qui l'a recue.
+#
+# ReadWriteOnce suffit parce que le cluster n'a qu'un seul noeud : les deux
+# replicas y tournent et partagent donc le meme volume. Sur un cluster a
+# plusieurs noeuds, ce mode empecherait les pods de nœuds differents de
+# demarrer ; il faudrait alors du ReadWriteMany, ou un stockage objet, ce
+# qui est la direction retenue a terme (issues #72 et #52).
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: medias-django
+  namespace: dilane-shop
+  labels:
+    app.kubernetes.io/name: medias-django
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 2Gi
+  # Aucune storageClassName : la classe par defaut du cluster s'applique.
+  # Sous k3s, local-path est en WaitForFirstConsumer — la revendication
+  # reste donc Pending jusqu'au demarrage du premier pod, ce qui est normal.
+
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -37,6 +65,40 @@ spec:
       labels:
         app.kubernetes.io/name: django
     spec:
+      securityContext:
+        # 999 est l'utilisateur django de l'image. fsGroup demande au kubelet
+        # de donner le volume a ce groupe ; il n'est pas honore par les
+        # volumes de type hostPath, ce que produit local-path sous k3s, d'ou
+        # le conteneur d'initialisation ci-dessous. Conserve : inoffensif la
+        # ou il est ignore, utile la ou il fonctionne.
+        fsGroup: 999
+      initContainers:
+        # Un volume neuf appartient a root, et le montage masque le
+        # /app/media de l'image, qui appartenait pourtant a django. Sans ce
+        # chown, tout televersement echouerait en « Permission denied ».
+        # Verifie en reproduisant le montage d'un repertoire appartenant a
+        # root : l'ecriture echoue avant, reussit apres.
+        # Meme correctif que le CronJob de sauvegarde (09-backup-cronjob.yaml).
+        - name: preparer-medias
+          # Meme image que l'application : chaque overlay la definit par son
+          # champ "images", aucune image supplementaire a telecharger.
+          image: dilane-shop
+          securityContext:
+            runAsUser: 0        # le chown exige root ; lui seul l'obtient
+          command:
+            - /bin/sh
+            - -c
+            - chown 999:999 /app/media && chmod 755 /app/media
+          volumeMounts:
+            - name: medias
+              mountPath: /app/media
+          resources:
+            requests:
+              memory: "16Mi"
+              cpu: "10m"
+            limits:
+              memory: "64Mi"
+              cpu: "100m"
       containers:
         - name: django
           # Nom logique, sans registre ni etiquette : chaque overlay les
@@ -51,6 +113,17 @@ spec:
                 name: dilane-shop-config
             - secretRef:
                 name: dilane-shop-secrets
+          env:
+            # Metriques Prometheus en multiprocessus (issue #45). Gunicorn
+            # lance 3 workers, chacun avec ses propres compteurs en memoire :
+            # sans ce reglage, un appel a /metrics ne rend que ceux du worker
+            # qui repond. Verifie : apres 12 requetes, les releves successifs
+            # donnaient 3, 3, 4, 3, 3, 5 au lieu de 12.
+            # Le repertoire est un emptyDir, donc vide a chaque demarrage du
+            # pod — les fichiers de mesures d'une execution precedente ne
+            # doivent pas etre relus.
+            - name: PROMETHEUS_MULTIPROC_DIR
+              value: /tmp/metriques
           # Le pod est-il pret a recevoir du trafic ?
           # Un echec le retire du Service, sans le tuer.
           readinessProbe:
@@ -78,6 +151,19 @@ spec:
             periodSeconds: 20
             failureThreshold: 3
 
+          # Seul emplacement inscriptible du conteneur : le reste de /app
+          # appartient a root et reste en lecture seule (issue #84).
+          # Ni le Job de migration ni le CronJob de sauvegarde ne montent ce
+          # volume : ils n'ecrivent aucun media.
+          volumeMounts:
+            - name: medias
+              mountPath: /app/media
+            # Fichiers de mesures partages entre les workers gunicorn.
+            # Inscriptible par l'utilisateur django grace au fsGroup du pod :
+            # contrairement aux volumes hostPath, un emptyDir l'honore.
+            - name: metriques
+              mountPath: /tmp/metriques
+
           resources:
             requests:
               memory: "256Mi"
@@ -85,3 +171,13 @@ spec:
             limits:
               memory: "512Mi"
               cpu: "500m"
+
+      volumes:
+        - name: medias
+          persistentVolumeClaim:
+            claimName: medias-django
+        # Volume ephemere, recree vide a chaque demarrage du pod : les
+        # metriques d'un pod disparaissent avec lui, ce qui est le
+        # comportement attendu — Prometheus interroge chaque pod.
+        - name: metriques
+          emptyDir: {}

@@ -14,10 +14,13 @@ from shop.views import (
     profil,
     search_products,
     healthz,
+    metrics,
 )
 
 urlpatterns = [
     path('healthz/', healthz, name='healthz'),
+    # Metriques Prometheus, refusees si la requete vient de l'Ingress
+    path('metrics', metrics, name='metrics'),
     path('api/produits/', search_products, name='search_products'),
     path('webhooks/stripe/', stripe_webhook, name='stripe_webhook'),
     path('', index, name='home'),
