@@ -1,12 +1,13 @@
 # Grafana (issue #44) : visualisation des métriques de Prometheus.
 #
 # Tout est provisionné depuis le dépôt : source de données, tableau de bord,
-# compte administrateur. La base interne de Grafana (SQLite) n'a donc rien à
-# conserver et vit dans un emptyDir, recréé vide à chaque démarrage : aucun
-# volume persistant, et un mot de passe changé dans le Secret s'applique au
-# prochain redémarrage. Contrepartie : un tableau de bord créé à la main
-# dans l'interface disparaît au redémarrage — il faut l'exporter en JSON
-# dans grafana/ pour le conserver.
+# compte administrateur, et depuis #48 les alertes (règles, point de
+# contact, politique de notification). La base interne de Grafana (SQLite)
+# n'a donc rien à conserver et vit dans un emptyDir, recréé vide à chaque
+# démarrage : aucun volume persistant, et un mot de passe changé dans le
+# Secret s'applique au prochain redémarrage. Contrepartie : un tableau de
+# bord créé à la main dans l'interface disparaît au redémarrage — il faut
+# l'exporter en JSON dans grafana/ pour le conserver.
 #
 # Pas d'Ingress : Grafana n'est joignable que par redirection de port, voir
 # docs/observabilite.md.
@@ -65,11 +66,35 @@ spec:
               value: "false"
             - name: GF_AUTH_ANONYMOUS_ENABLED
               value: "false"
+            # Alertes (issue #48) : Grafana évalue lui-même les règles de
+            # grafana/alertes/ et envoie les courriels par son Alertmanager
+            # intégré. Aucun Alertmanager séparé à déployer.
+            - name: GF_UNIFIED_ALERTING_ENABLED
+              value: "true"
+            # Envoi par le relais SMTP de Brevo, déjà utilisé par
+            # l'application. Port 587 avec STARTTLS obligatoire : Grafana
+            # refuse d'envoyer si le serveur ne propose pas le chiffrement,
+            # plutôt que de transmettre les identifiants en clair.
+            - name: GF_SMTP_ENABLED
+              value: "true"
+            - name: GF_SMTP_HOST
+              value: smtp-relay.brevo.com:587
+            - name: GF_SMTP_STARTTLS_POLICY
+              value: MandatoryStartTLS
+            # Identifiants Brevo et adresse d'expéditeur, lus dans le Secret
+            # grafana-smtp (grafana-smtp.sops.yaml), monté en fichiers. Même
+            # expéditeur que l'application (EMAIL_FROM) : c'est une adresse
+            # déjà validée chez Brevo, qui rejette les expéditeurs inconnus.
+            - name: GF_SMTP_USER__FILE
+              value: /etc/grafana-smtp/smtp-user
+            - name: GF_SMTP_PASSWORD__FILE
+              value: /etc/grafana-smtp/smtp-password
+            - name: GF_SMTP_FROM_ADDRESS__FILE
+              value: /etc/grafana-smtp/from-address
+            - name: GF_SMTP_FROM_NAME
+              value: Dilane Shop — alertes
             # Allègement : chaque fonction coupée ici est un service de
             # moins en mémoire et un appel sortant de moins.
-            # - pas d'alertes Grafana : l'alerte passera par Alertmanager (#48) ;
-            - name: GF_UNIFIED_ALERTING_ENABLED
-              value: "false"
             # - pas de télémétrie ni de vérification de mises à jour ;
             - name: GF_ANALYTICS_REPORTING_ENABLED
               value: "false"
@@ -134,6 +159,12 @@ spec:
             - name: admin
               mountPath: /etc/grafana-admin
               readOnly: true
+            - name: smtp
+              mountPath: /etc/grafana-smtp
+              readOnly: true
+            - name: alertes
+              mountPath: /etc/grafana/provisioning/alerting
+              readOnly: true
             - name: sources-de-donnees
               mountPath: /etc/grafana/provisioning/datasources
               readOnly: true
@@ -153,6 +184,16 @@ spec:
         - name: admin
           secret:
             secretName: grafana-admin
+        # Secret propre à l'observabilité, et non dilane-shop-secrets : un
+        # Secret n'est lisible que dans son espace de noms, et l'ouvrir à
+        # Grafana exposerait aussi les clés Stripe et le mot de passe de la
+        # base. Seules les trois valeurs utiles y sont recopiées.
+        - name: smtp
+          secret:
+            secretName: grafana-smtp
+        - name: alertes
+          configMap:
+            name: grafana-alertes
         - name: sources-de-donnees
           configMap:
             name: grafana-sources-de-donnees

@@ -1,0 +1,15 @@
+# Politique de notification (issue #48) : toutes les alertes vont au
+# courriel, groupées par règle.
+apiVersion: 1
+policies:
+  - orgId: 1
+    receiver: courriel-dilane-shop
+    group_by: ["grafana_folder", "alertname"]
+    # Attente avant le premier courriel d'un groupe : laisse le temps à
+    # d'autres alertes du même groupe d'arriver, pour n'envoyer qu'un message.
+    group_wait: 30s
+    # Délai avant de signaler un changement dans un groupe déjà notifié.
+    group_interval: 5m
+    # Rappel tant que l'alerte reste active. 4 h : assez pour ne pas oublier
+    # une panne, pas assez pour noyer la boîte de réception.
+    repeat_interval: 4h

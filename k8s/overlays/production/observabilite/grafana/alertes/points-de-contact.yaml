@@ -1,0 +1,24 @@
+# Point de contact des alertes de Dilane Shop (issue #48).
+#
+# Courriel envoyé par le serveur SMTP de Grafana, c'est-à-dire par le relais
+# Brevo déjà utilisé par l'application (réglages GF_SMTP_* de grafana.yaml,
+# identifiants dans le Secret grafana-smtp). Aucun Alertmanager séparé :
+# Grafana embarque le sien, qui groupe et envoie les notifications.
+#
+# Provisionné par fichier : Grafana n'a pas de volume persistant, un point de
+# contact créé dans l'interface disparaîtrait au redémarrage. Il n'est pas
+# modifiable dans l'interface ; la source de vérité est ce fichier.
+apiVersion: 1
+contactPoints:
+  - orgId: 1
+    name: courriel-dilane-shop
+    receivers:
+      - uid: courriel-dilane-shop
+        type: email
+        settings:
+          # Plusieurs destinataires : les séparer par un point-virgule.
+          addresses: wankamdypuedilane@gmail.com
+          singleEmail: false
+        # Un courriel aussi quand l'alerte se résout : on sait que c'est fini
+        # sans devoir ouvrir Grafana.
+        disableResolveMessage: false

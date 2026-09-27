@@ -1,0 +1,188 @@
+# Règles d'alerte de Dilane Shop (issue #48), provisionnées comme code.
+#
+# Évaluées par Grafana toutes les minutes contre Prometheus. Chaque règle a
+# deux étapes : A, la requête PromQL, instantanée ; C, le seuil appliqué à A.
+#
+# SEUILS À AJUSTER : chercher « SEUIL » dans ce fichier. Chaque seuil est
+# le paramètre « params » de l'étape C de sa règle ; la durée pendant
+# laquelle il doit être franchi avant l'envoi est le champ « for ».
+#
+# Les textes des annotations sont des gabarits Go : « $values.A.Value » y
+# désigne la valeur de l'étape A au moment de l'évaluation. Grafana 12.4 les
+# charge tels quels, sans substitution de variables d'environnement (vérifié :
+# un « $$ » resterait littéral et casserait le gabarit).
+apiVersion: 1
+groups:
+  - orgId: 1
+    name: dilane-shop
+    # Même dossier que le tableau de bord des signaux d'or.
+    folder: Dilane Shop
+    interval: 1m
+    rules:
+      # ------------------------------------------------------------------
+      # 1. Site injoignable : plus aucun pod Django ne répond à Prometheus.
+      # ------------------------------------------------------------------
+      - uid: dilane-shop-site-injoignable
+        title: Site injoignable
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              refId: A
+              instant: true
+              # Nombre de pods Django collectés avec succès. « or vector(0) » :
+              # si aucune cible n'existe plus (pods supprimés, Deployment à
+              # zéro), up{} disparaît au lieu de valoir 0 ; la requête rend
+              # alors 0 plutôt que rien.
+              expr: sum(up{job="django"}) or vector(0)
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator:
+                    type: lt
+                    # SEUIL : alerte sous 1 pod répondant, donc à 0.
+                    # Mettre 2 pour être prévenu dès qu'un des deux replicas
+                    # tombe, le site restant servi par l'autre.
+                    params: [1]
+        # SEUIL : durée continue avant l'envoi.
+        for: 2m
+        # Prometheus injoignable ou en erreur : Grafana ne peut pas conclure.
+        # « Error » envoie une alerte distincte (DatasourceError), plutôt que
+        # d'annoncer à tort une panne du site.
+        execErrState: Error
+        noDataState: Alerting
+        labels:
+          severity: critique
+        annotations:
+          summary: "Dilane Shop injoignable : aucun pod Django ne répond"
+          description: >-
+            Pods Django répondant à Prometheus : {{ $values.A.Value }} (attendu : 2).
+            Vérifier kubectl get pods -n dilane-shop et les journaux des pods.
+          # Lien vers le panneau correspondant du tableau de bord.
+          __dashboardUid__: dilane-shop-signaux-dor
+          __panelId__: "4"
+
+      # ------------------------------------------------------------------
+      # 2. Taux d'erreur 5xx élevé.
+      # ------------------------------------------------------------------
+      - uid: dilane-shop-erreurs-5xx
+        title: Taux d'erreur 5xx élevé
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: prometheus
+            model:
+              refId: A
+              instant: true
+              # Part des réponses 5xx sur 5 min, hors /metrics et /healthz/
+              # (collectes et sondes, qui fausseraient le rapport).
+              #
+              # Gardes contre le faible trafic : la dernière ligne ne garde
+              # le résultat que si au moins 20 requêtes ont été servies en
+              # 5 min. Sans elle, une seule erreur sur deux requêtes à 4 h du
+              # matin ferait 50 %, et une division par zéro (aucune requête)
+              # rendrait NaN. Sous ce volume, la requête ne rend rien : la
+              # règle reste « Normal » (noDataState: OK).
+              # « or vector(0) » : aucune erreur vue depuis le démarrage des
+              # pods signifie 0 %, pas « pas de donnée ».
+              expr: >-
+                (
+                  sum(rate(django_http_requests_total{job="django", view!~"metrics|healthz", status=~"5.."}[5m]))
+                  or vector(0)
+                )
+                /
+                sum(rate(django_http_requests_total{job="django", view!~"metrics|healthz"}[5m]))
+                and on()
+                sum(increase(django_http_requests_total{job="django", view!~"metrics|healthz"}[5m])) >= 20
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator:
+                    type: gt
+                    # SEUIL : 0.05, soit 5 % des réponses en 5xx.
+                    params: [0.05]
+        # SEUIL : durée continue avant l'envoi, en plus de la fenêtre de
+        # 5 min de la requête.
+        for: 2m
+        execErrState: Error
+        noDataState: OK
+        labels:
+          severity: critique
+        annotations:
+          summary: "Dilane Shop : plus de 5 % de réponses en erreur 5xx"
+          description: >-
+            Part des réponses 5xx sur les 5 dernières minutes :
+            {{ humanizePercentage $values.A.Value }}. Consulter les journaux des
+            pods Django et le panneau « Exceptions non rattrapées » du tableau de bord.
+          # Lien vers le panneau correspondant du tableau de bord.
+          __dashboardUid__: dilane-shop-signaux-dor
+          __panelId__: "7"
+
+      # ------------------------------------------------------------------
+      # 3. Latence p95 élevée.
+      # ------------------------------------------------------------------
+      - uid: dilane-shop-latence-p95
+        title: Latence p95 élevée
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: prometheus
+            model:
+              refId: A
+              instant: true
+              # 95e centile de la durée des requêtes sur 5 min, tous pods
+              # confondus, hors /metrics et /healthz/. Même garde de volume
+              # que la règle précédente : sur trois requêtes, le p95 n'a pas
+              # de sens, et une seule requête lente suffirait à alerter.
+              expr: >-
+                histogram_quantile(0.95,
+                  sum by (le) (rate(django_http_requests_latency_seconds_bucket{job="django", view!~"metrics|healthz"}[5m]))
+                )
+                and on()
+                sum(increase(django_http_requests_total{job="django", view!~"metrics|healthz"}[5m])) >= 20
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator:
+                    type: gt
+                    # SEUIL : 1 seconde. L'histogramme a des bornes à 0,5 s,
+                    # 1 s et 2,5 s : un seuil entre deux bornes est estimé par
+                    # interpolation, donc moins précis.
+                    params: [1]
+        # SEUIL : durée continue avant l'envoi.
+        for: 2m
+        execErrState: Error
+        noDataState: OK
+        labels:
+          severity: avertissement
+        annotations:
+          summary: "Dilane Shop : latence p95 supérieure à 1 s"
+          description: >-
+            p95 sur les 5 dernières minutes : {{ humanizeDuration $values.A.Value }}.
+            Regarder la saturation (requêtes en cours) et la latence par route
+            dans le tableau de bord.
+          # Lien vers le panneau correspondant du tableau de bord.
+          __dashboardUid__: dilane-shop-signaux-dor
+          __panelId__: "5"
