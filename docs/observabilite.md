@@ -349,7 +349,7 @@ Rien ne garantit que cette charge fasse passer la règle en *Alerting*, et c'est
 
   Le nouveau parcours n'a pas encore été mesuré sous charge. Il ajoute, à chaque itération, une recherche qui trouve des produits et l'ouverture d'une fiche : ses latences ne se déduisent pas des chiffres ci-dessus, seule une nouvelle mesure les donnera.
 
-Si le p95 de Grafana reste sous 1 s, c'est un **résultat** : l'application tient cette charge. Il ne faut pas monter les VUS pour forcer l'alerte : le plafond de 8 protège le VPS, qui n'a pas de swap. Pour vérifier la chaîne « règle → politique → courriel », utiliser la règle temporaire décrite dans [Tester une alerte](#tester-une-alerte-sans-attendre-une-panne) : c'est un test distinct du test k6.
+Si le p95 de Grafana reste sous 1 s, c'est un **résultat** : l'application tient cette charge. Il ne faut pas monter les VUS pour forcer l'alerte : le plafond de 8 protège le VPS, qui n'a pas de swap. Pour chercher la limite réelle du site, un environnement séparé est prévu : voir [test-capacite.md](test-capacite.md). Pour vérifier la chaîne « règle → politique → courriel », utiliser la règle temporaire décrite dans [Tester une alerte](#tester-une-alerte-sans-attendre-une-panne) : c'est un test distinct du test k6.
 
 Si le terme de recherche ne trouve rien dans le catalogue visé, le test échoue au lieu de mesurer un parcours vide : c'est ce qui rendait l'ancien parcours peu représentatif.
 

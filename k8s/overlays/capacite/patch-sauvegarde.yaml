@@ -1,0 +1,10 @@
+# Sauvegarde quotidienne suspendue : la base ne contient que le catalogue
+# de démonstration, et un pg_dump lancé à 3 h pendant une mesure en
+# fausserait le résultat.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: sauvegarde-postgres
+  namespace: dilane-shop
+spec:
+  suspend: true

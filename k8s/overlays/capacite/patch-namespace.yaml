@@ -1,0 +1,9 @@
+# Étiquette d'environnement. scripts/capacite/verifier-cluster.sh et
+# scripts/capacite/campagne.sh vérifient sa présence avant toute action :
+# l'espace de noms de production ne la porte pas.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: dilane-shop
+  labels:
+    dilane-shop.store/environnement: capacite

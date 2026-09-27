@@ -1,0 +1,36 @@
+# Certificat Let's Encrypt du domaine de capacité.
+#
+# ClusterIssuer au nom distinct de ceux de la production : appliquée par
+# erreur sur le cluster de production, cette surcouche ne modifierait pas
+# ses émetteurs. Environnement ACME de production, parce que k6 vérifie le
+# certificat ; le domaine compte dans les limites de Let's Encrypt de
+# dilane-shop.store, largement suffisantes pour un certificat ponctuel.
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-capacite
+spec:
+  acme:
+    server: https://acme-v02.api.letsencrypt.org/directory
+    email: wankamdypuedilane@gmail.com
+    privateKeySecretRef:
+      name: letsencrypt-capacite-compte
+    solvers:
+      - http01:
+          ingress:
+            ingressClassName: nginx
+
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: capacite-tls
+  namespace: dilane-shop
+spec:
+  secretName: tls-capacite
+  dnsNames:
+    - capacite.dilane-shop.store
+  issuerRef:
+    name: letsencrypt-capacite
+    kind: ClusterIssuer
+    group: cert-manager.io

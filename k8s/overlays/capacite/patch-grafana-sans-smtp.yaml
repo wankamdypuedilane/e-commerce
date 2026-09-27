@@ -1,0 +1,39 @@
+# Grafana sans serveur SMTP : aucune alerte ne part par courriel depuis
+# l'environnement de capacité.
+#
+# Les règles d'alerte restent évaluées : leur état (Normal, Pending,
+# Alerting) se lit dans l'interface pendant la campagne. Le point de
+# contact courriel échoue alors avec « SMTP not configured », ce qui est
+# voulu. Le Secret grafana-smtp de production n'existe pas ici : son volume
+# et les variables qui le lisent sont retirés.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: grafana
+  namespace: observabilite
+spec:
+  template:
+    spec:
+      containers:
+        - name: grafana
+          env:
+            - name: GF_SMTP_ENABLED
+              value: "false"
+            - name: GF_SMTP_HOST
+              $patch: delete
+            - name: GF_SMTP_STARTTLS_POLICY
+              $patch: delete
+            - name: GF_SMTP_USER__FILE
+              $patch: delete
+            - name: GF_SMTP_PASSWORD__FILE
+              $patch: delete
+            - name: GF_SMTP_FROM_ADDRESS__FILE
+              $patch: delete
+            - name: GF_SMTP_FROM_NAME
+              $patch: delete
+          volumeMounts:
+            - mountPath: /etc/grafana-smtp
+              $patch: delete
+      volumes:
+        - name: smtp
+          $patch: delete

@@ -1,0 +1,11 @@
+# localhost et 127.0.0.1 restent autorisés : les sondes interrogent
+# /healthz/ avec l'en-tête Host: localhost. dilane-shop.store n'y figure
+# pas : ce cluster ne doit répondre que sous le domaine de capacité.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dilane-shop-config
+  namespace: dilane-shop
+data:
+  DJANGO_ALLOWED_HOSTS: "localhost,127.0.0.1,capacite.dilane-shop.store"
+  DJANGO_CSRF_TRUSTED_ORIGINS: "https://capacite.dilane-shop.store"

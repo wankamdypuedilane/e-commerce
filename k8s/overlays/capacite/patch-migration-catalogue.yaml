@@ -1,0 +1,21 @@
+# Données de l'environnement de capacité : le seul catalogue de
+# démonstration (5 catégories, 25 produits), chargé après les migrations.
+# Aucune donnée client, aucune commande : la base part vide à la création
+# du volume. loaddata est idempotent (clés primaires fixées dans le
+# fichier) : relancer le Job ne duplique rien.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: django-migrate
+  namespace: dilane-shop
+spec:
+  template:
+    spec:
+      containers:
+        - name: migrate
+          command:
+            - /bin/sh
+            - -c
+            - >-
+              python manage.py migrate --noinput &&
+              python manage.py loaddata fixtures/demo-catalogue.json

@@ -1,0 +1,70 @@
+# Environnement de test de capacité — capacite.dilane-shop.store.
+#
+# Réplique de la production destinée à mesurer la capacité du site sans
+# jamais charger la production : un VPS distinct, de même gamme, détruit
+# après la campagne. Voir docs/test-capacite.md.
+#
+# Construite à partir de k8s/base, et non de la surcouche de production,
+# qui porte le domaine dilane-shop.store, son certificat et les alertes par
+# courriel. Sont repris à l'identique de la production :
+#   - l'image épinglée (champ images ci-dessous, même empreinte de commit) ;
+#   - les 2 replicas Django, les requêtes et limites de ressources (base) ;
+#   - la pile Prometheus/Grafana (../production/observabilite), avec les
+#     mêmes limites mémoire, car elle consomme aussi la mémoire du VPS.
+# scripts/capacite/comparer_production.py vérifie cette égalité.
+#
+# Diffèrent, volontairement :
+#   - le domaine, le certificat et les hôtes autorisés ;
+#   - les Secrets, propres à cet environnement, sans aucune clé Stripe ni
+#     Brevo : le paiement est inactif (Django exige les deux clés Stripe) ;
+#   - la sortie réseau des pods de dilane-shop, limitée au DNS et à
+#     PostgreSQL : ni courriel (SMTP Brevo), ni appel à Stripe ne peut
+#     partir, même par erreur de configuration ;
+#   - les routes de paiement, de compte et d'administration, fermées à
+#     l'Ingress (réponse 503) ;
+#   - Grafana, sans serveur SMTP : aucune alerte par courriel ;
+#   - les données : uniquement fixtures/demo-catalogue.json, chargé par le
+#     Job de migration. Aucune donnée client ni commande ;
+#   - la sauvegarde quotidienne, suspendue : rien à sauvegarder, et elle
+#     perturberait une mesure lancée à 3 h.
+#
+# Comme ailleurs, les Secrets chiffrés (secrets.sops.yaml,
+# grafana-admin.sops.yaml) ne sont pas listés ici et s'appliquent à part.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../../base
+  - ../production/observabilite
+  - tls.yaml
+  - reseau-sortie.yaml
+  - routes-fermees.yaml
+
+# Même registre et même étiquette que k8s/overlays/production. À changer
+# ensemble : comparer_production.py échoue si elles divergent.
+images:
+  - name: dilane-shop
+    newName: ghcr.io/wankamdypuedilane/dilane-shop
+    newTag: 5df4ad5763edebca35b8175970d6d0f6fcb0abc2
+
+patches:
+  # Étiquette qui identifie ce cluster comme environnement de capacité ;
+  # les scripts refusent d'agir sur un cluster qui ne la porte pas.
+  - path: patch-namespace.yaml
+  # Domaine de capacité, dans la règle et dans la section TLS de l'Ingress.
+  - path: patch-ingress.yaml
+    target:
+      kind: Ingress
+      name: dilane-shop
+  # Hôtes autorisés et origine CSRF du domaine de capacité.
+  - path: patch-configmap.yaml
+  # Politique de téléchargement de l'image, comme en production.
+  - path: patch-images.yaml
+  # Collecte Prometheus et IP du pod dans ALLOWED_HOSTS, comme en production.
+  - path: patch-django-metriques.yaml
+  # Migrations, puis chargement du seul catalogue de démonstration.
+  - path: patch-migration-catalogue.yaml
+  # Sauvegarde quotidienne suspendue.
+  - path: patch-sauvegarde.yaml
+  # Grafana sans SMTP.
+  - path: patch-grafana-sans-smtp.yaml

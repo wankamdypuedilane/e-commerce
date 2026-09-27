@@ -634,7 +634,8 @@ Les pages de confirmation et de retour de paiement exigent une connexion et n’
 │   └── sprints/                # Rétrospectives de sprint
 ├── infra/terraform/            # Archive : infrastructure AWS, plus active
 ├── scripts/                    # Archive : sauvegarde et restauration PostgreSQL
-│   └── k6/                     # Test de charge du catalogue (docs/observabilite.md)
+│   ├── capacite/               # Campagne de capacité et garde-fous (docs/test-capacite.md)
+│   └── k6/                     # Tests k6 : catalogue (production) et capacité
 └── .github/
     ├── dependabot.yml          # Mises à jour hebdomadaires : pip, image Docker, GitHub Actions
     └── workflows/              # Workflow CI (ci.yml) et sa documentation
@@ -657,6 +658,7 @@ Les pages de confirmation et de retour de paiement exigent une connexion et n’
 - [docs/definition-of-done.md](docs/definition-of-done.md) — critères qu'une tâche doit remplir pour être considérée comme terminée, chacun issu d'un défaut réel du projet.
 - [docs/deploiement-production.md](docs/deploiement-production.md) — procédure reproductible du déploiement sur VPS, du serveur nu au site en HTTPS.
 - [docs/observabilite.md](docs/observabilite.md) — Prometheus et Grafana en production : collecte par pod, budget mémoire, alertes, test de charge k6, déploiement, accès par redirection de port.
+- [docs/test-capacite.md](docs/test-capacite.md) — préparation d'un test de capacité sur un environnement séparé (`capacite.dilane-shop.store`) : surcouche dédiée, garde-fous, campagne par paliers à débit imposé, tableau de résultats, destruction.
 
 ## Suivi du projet
 

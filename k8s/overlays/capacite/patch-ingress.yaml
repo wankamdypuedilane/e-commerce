@@ -1,0 +1,11 @@
+# Correctif JSON 6902 : domaine de capacité à la place du substitut de la
+# base, dans la règle et dans la section TLS.
+- op: replace
+  path: /spec/rules/0/host
+  value: capacite.dilane-shop.store
+- op: replace
+  path: /spec/tls/0/hosts/0
+  value: capacite.dilane-shop.store
+- op: replace
+  path: /spec/tls/0/secretName
+  value: tls-capacite

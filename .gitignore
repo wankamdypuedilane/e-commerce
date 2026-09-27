@@ -16,3 +16,6 @@ media/
 k8s/*-secrets.yaml
 k8s/secrets*.yaml
 *.dec.yaml
+
+# Résultats des campagnes de capacité (scripts/capacite/campagne.sh)
+resultats/

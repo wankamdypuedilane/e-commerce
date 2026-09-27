@@ -1,0 +1,42 @@
+# Sortie réseau des pods de dilane-shop limitée au DNS et à PostgreSQL.
+#
+# Deuxième barrière derrière l'absence d'identifiants : l'image de
+# production envoie ses courriels par le SMTP de Brevo (EMAIL_BACKEND fixé
+# dans settings.py) et parle à l'API Stripe. Ici, aucune connexion
+# sortante vers Internet n'est possible, quelle que soit la configuration.
+#
+# Seule la sortie est filtrée (policyTypes: Egress) : l'entrée reste
+# ouverte à ingress-nginx, aux sondes et à la collecte de Prometheus.
+# k3s applique les NetworkPolicy par son contrôleur intégré (kube-router).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: sortie-dns-et-postgres
+  namespace: dilane-shop
+  labels:
+    app.kubernetes.io/part-of: capacite
+spec:
+  podSelector: {}
+  policyTypes: ["Egress"]
+  egress:
+    # Résolution de noms, par CoreDNS.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # Base de données, dans le même espace de noms.
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: postgres
+      ports:
+        - protocol: TCP
+          port: 5432
