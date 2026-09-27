@@ -5,9 +5,11 @@
 // latence réelle le permet, voir la règle « Latence p95 élevée » se
 // déclencher. Voir docs/observabilite.md, section « Test de charge k6 ».
 //
-// Uniquement des GET, sur deux routes publiques du catalogue :
+// Uniquement des GET, sur trois routes publiques du catalogue, dans l'ordre
+// d'une visite :
 //   /                                  page d'accueil (liste paginée)
-//   /api/produits/?item-name=livre     recherche de produits (JSON)
+//   /api/produits/?item-name=<terme>   recherche de produits (JSON)
+//   /<id>                              fiche du premier produit trouvé
 // Aucun checkout, paiement, création de compte ni écriture.
 //
 // Variables d'environnement (k6 run -e NOM=valeur) :
@@ -21,6 +23,9 @@
 //                           démarrer.
 //   AUTORISER_CHARGE_PROD   doit valoir exactement « oui » pour lancer le
 //                           mode charge sur la production.
+//   TERME_RECHERCHE         terme cherché, « Casque » par défaut. 1 à 64
+//                           caractères ; il doit trouver au moins un produit,
+//                           sinon le test échoue.
 //
 // Exemples :
 //   k6 run -e CIBLE=https://dilane-shop.store scripts/k6/catalogue.js
@@ -29,15 +34,18 @@
 import http from 'k6/http';
 import { check, sleep } from 'k6';
 import exec from 'k6/execution';
-import { Rate } from 'k6/metrics';
+import { Counter, Rate } from 'k6/metrics';
 
 const PRODUCTION = 'https://dilane-shop.store';
 const VUS_DEFAUT = 6;
 const VUS_PLAFOND = 8;
 // Pause après chaque requête, en secondes.
 const PAUSE = 0.5;
-// Mode smoke : 1 utilisateur, 5 itérations de 2 requêtes, soit 10 requêtes.
+// Mode smoke : 1 utilisateur, 5 itérations de 3 requêtes, soit 15 requêtes
+// quand le parcours réussit.
 const ITERATIONS_SMOKE = 5;
+const TERME_DEFAUT = 'Casque';
+const TERME_LONGUEUR_MAX = 64;
 const SCENARIO = 'catalogue';
 
 // ---------------------------------------------------------------------------
@@ -93,9 +101,24 @@ function lireVus() {
   return vus;
 }
 
+// Terme de recherche. Encodé dans l'URL par encodeURIComponent : espaces,
+// accents, « & » ou « # » ne peuvent ni casser la requête ni ajouter de
+// paramètre. La longueur est bornée pour garder une requête raisonnable ;
+// elle se compte en caractères, pas en octets.
+function lireTerme() {
+  const terme = (__ENV.TERME_RECHERCHE === undefined ? TERME_DEFAUT : __ENV.TERME_RECHERCHE).trim();
+  const longueur = Array.from(terme).length;
+  if (longueur < 1 || longueur > TERME_LONGUEUR_MAX) {
+    refuser(`TERME_RECHERCHE doit compter de 1 à ${TERME_LONGUEUR_MAX} caractères (${longueur} reçus).`);
+  }
+  return terme;
+}
+
 const { origine: CIBLE, production: EST_PRODUCTION } = lireCible();
 const MODE = lireMode();
 const VUS = MODE === 'charge' ? lireVus() : 1;
+const TERME = lireTerme();
+const URL_RECHERCHE = `${CIBLE}/api/produits/?item-name=${encodeURIComponent(TERME)}`;
 
 if (MODE === 'charge' && EST_PRODUCTION && __ENV.AUTORISER_CHARGE_PROD !== 'oui') {
   refuser('le mode charge sur la production exige -e AUTORISER_CHARGE_PROD=oui.');
@@ -126,6 +149,13 @@ const SCENARIOS = {
 
 // Part des réponses en HTTP 200, toutes requêtes confondues.
 const reponses200 = new Rate('reponses_http_200');
+// Recherches répondues en 200 mais inexploitables : liste vide, JSON
+// illisible, ou premier produit sans identifiant entier positif. Ce n'est
+// pas une défaillance passagère sous charge mais un terme ou un catalogue
+// inadapté : une seule suffit à faire échouer le test.
+const recherchesInexploitables = new Counter('recherches_inexploitables');
+// Fiches répondues en 200 mais pas en HTML : une seule fait échouer le test.
+const fichesNonHtml = new Counter('fiches_non_html');
 
 // abortOnFail : le test s'arrête dès qu'un seuil est franchi, au lieu de
 // continuer à charger un site qui souffre. delayAbortEval laisse passer les
@@ -141,6 +171,10 @@ export const options = {
     http_req_duration: [{ threshold: 'p(95)<5000', ...ARRET }],
     // Arrêt si moins de 98 % des réponses sont des HTTP 200.
     reponses_http_200: [{ threshold: 'rate>=0.98', ...ARRET }],
+    // Arrêt dès qu'une recherche ne donne aucun produit exploitable.
+    recherches_inexploitables: [{ threshold: 'count==0', ...ARRET }],
+    // Arrêt dès qu'une fiche répond 200 sans être une page HTML.
+    fiches_non_html: [{ threshold: 'count==0', ...ARRET }],
   },
   // Certificat auto-signé du cluster kind uniquement. Jamais pour la
   // production, dont le certificat Let's Encrypt doit être valide.
@@ -181,38 +215,74 @@ export function setup() {
     );
   }
   console.log(
-    `Cible ${CIBLE} — mode ${MODE}` +
-      (MODE === 'charge' ? ` — ${VUS} utilisateurs virtuels, 10 minutes` : ' — 10 requêtes'),
+    `Cible ${CIBLE} — mode ${MODE} — recherche « ${TERME} »` +
+      (MODE === 'charge'
+        ? ` — ${VUS} utilisateurs virtuels, 10 minutes`
+        : ` — ${ITERATIONS_SMOKE * 3} requêtes attendues`),
   );
 }
 
 // ---------------------------------------------------------------------------
-// Parcours d'un utilisateur virtuel : deux lectures, une pause après chacune.
+// Parcours d'un utilisateur virtuel : accueil, recherche, fiche du premier
+// produit trouvé ; une pause après chaque requête.
 // ---------------------------------------------------------------------------
 
+function estHtml(reponse) {
+  return (reponse.headers['Content-Type'] || '').includes('text/html');
+}
+
 // Le tag « name » regroupe les mesures par route dans le résumé, quelle que
-// soit l'URL exacte.
+// soit l'URL exacte : toutes les fiches sont comptées sous « fiche-produit ».
 function lire(url, nom, verifications) {
   const reponse = http.get(url, { tags: { name: nom }, timeout: '15s' });
   reponses200.add(reponse.status === 200);
   check(reponse, verifications);
   sleep(PAUSE);
+  return reponse;
+}
+
+// Identifiant du premier produit renvoyé par la recherche, ou null si la
+// réponse n'en fournit pas d'exploitable.
+function premierIdentifiant(reponse) {
+  let produits;
+  try {
+    produits = reponse.json('products');
+  } catch (erreur) {
+    return null;
+  }
+  if (!Array.isArray(produits) || produits.length === 0) {
+    return null;
+  }
+  const id = produits[0] && produits[0].id;
+  return Number.isInteger(id) && id > 0 ? id : null;
 }
 
 export default function () {
   lire(`${CIBLE}/`, 'accueil', {
     'accueil : HTTP 200': (r) => r.status === 200,
-    'accueil : page HTML': (r) => (r.headers['Content-Type'] || '').includes('text/html'),
+    'accueil : page HTML': estHtml,
   });
 
-  lire(`${CIBLE}/api/produits/?item-name=livre`, 'api-produits', {
+  const recherche = lire(URL_RECHERCHE, 'api-produits', {
     'api-produits : HTTP 200': (r) => r.status === 200,
-    'api-produits : liste de produits': (r) => {
-      try {
-        return Array.isArray(r.json('products'));
-      } catch (erreur) {
-        return false;
-      }
-    },
   });
+  // Une recherche en erreur HTTP relève des seuils d'erreur ci-dessus, qui
+  // tolèrent de rares échecs sous charge ; la fiche est alors sautée.
+  if (recherche.status !== 200) {
+    return;
+  }
+  const id = premierIdentifiant(recherche);
+  check(id, { 'api-produits : au moins un produit, identifiant valide': (v) => v !== null });
+  if (id === null) {
+    recherchesInexploitables.add(1);
+    return;
+  }
+
+  const fiche = lire(`${CIBLE}/${id}`, 'fiche-produit', {
+    'fiche-produit : HTTP 200': (r) => r.status === 200,
+    'fiche-produit : page HTML': estHtml,
+  });
+  if (fiche.status === 200 && !estHtml(fiche)) {
+    fichesNonHtml.add(1);
+  }
 }
