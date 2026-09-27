@@ -1,0 +1,25 @@
+apiVersion: v1
+kind: Secret
+metadata:
+    name: grafana-smtp
+    namespace: observabilite
+type: Opaque
+stringData:
+    smtp-user: ENC[AES256_GCM,data:8uhplIBe2EwZDmuADXRwsC0VFSMCGcfg,iv:ULIDKlS2e1jaONxErJyRvbuhd63Mq84wjFZQEYgtR8E=,tag:5kbwMvkfwP42aZTho+Cf7g==,type:str]
+    smtp-password: ENC[AES256_GCM,data:P1kNUzPyB/u8ZUxocON7u8z10Hukn5tM6EFnHzkf6JNZMyJNTf9cC7p/OOMFt+WjSrY2qWCZsDmLJ63WS0EffYiiiLSAnZuwD0Yx+4nQumu9jkgwbENu5/1h,iv:atqA00IaVBt9PDX4s0vf6Y9p3iRaGBRB5zB2LUHbCb8=,tag:UgMlQelOghcwO9bUEmdeTg==,type:str]
+    from-address: ENC[AES256_GCM,data:Gu5SlmhzOPTJgnNBGzZal47yvXSBAmTwKw==,iv:UHG1wuwyojMhAFAtZysjh5MObbhMKyJCHvvVzQkfvpo=,tag:lYNMFYzI+vynVjhsbVCBpQ==,type:str]
+sops:
+    age:
+        - enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBGV1NXSkdYWURRcDhWOXNO
+            UU1MczYvT2VSS1ZsQkl3MCtGd2s5SkVPRHlnClkxUCtkbjVSQWtJS0k2RG9Uc0pS
+            VmNRQUYzTHZEbUx5Vlh3WjZUS2Z3WDgKLS0tIDNQRzlKTlBPS1pLK3dGVTMyVW5n
+            UUI2bmp6WVRoRXV4R0NOT0UySDZoUHMK7wfyU3p0g4fQdhdYS7ys7fhehAccmxkO
+            mmyN0fFv69fCJjGImviUkzot/Tk+jVFcgmJ0sp5hMiUhqkV13XdMYA==
+            -----END AGE ENCRYPTED FILE-----
+          recipient: age18tf4g52kmdt6v67lfql5nr02ypjy9pn0sv0349wsmepn9f2kkfhq36nrqd
+    encrypted_regex: ^(data|stringData)$
+    lastmodified: "2026-09-27T15:55:43Z"
+    mac: ENC[AES256_GCM,data:KYPWNt3MLwp4Ci8X//2T432D1XGbbGxrC63StPwZkecfEY7n3ZNLkj7WLbzTyhb/CvMqbxaopYpDfBbkpZXRmAveDUcirGe1grHsd5tIFNYjZqDv5EN4qtXzdrQOGp5xI/k0Hp7XcxmHaOTDA0aZX3hW2gCU9HUIhk0iSnQQ0Vw=,iv:lJAG/san6HTTPsTGf4jxx7Y4rh21FkjqGImrxfgUAgI=,tag:fed68zzoEatCxEk/fRZcZA==,type:str]
+    version: 3.13.3
