@@ -11,8 +11,9 @@
 # soit 320 Mi au plus ; 192 Mi réservés (requests). Voir
 # docs/observabilite.md.
 #
-# Comme pour l'application, le Secret (grafana-admin.sops.yaml) n'est pas
-# listé ici : ses valeurs sont chiffrées et s'appliquent à part.
+# Comme pour l'application, les Secrets (grafana-admin.sops.yaml,
+# grafana-smtp.sops.yaml) ne sont pas listés ici : leurs valeurs sont
+# chiffrées et s'appliquent à part.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
@@ -43,3 +44,10 @@ configMapGenerator:
     namespace: observabilite
     files:
       - grafana/signaux-dor.json
+  # Alertes (issue #48) : point de contact, politique, règles.
+  - name: grafana-alertes
+    namespace: observabilite
+    files:
+      - grafana/alertes/points-de-contact.yaml
+      - grafana/alertes/politique.yaml
+      - grafana/alertes/regles.yaml

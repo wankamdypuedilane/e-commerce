@@ -1,6 +1,6 @@
 # Observabilité — Prometheus et Grafana (production)
 
-Issue #44. Collecte et visualisation des métriques que Django expose sur `/metrics` depuis #45 : les quatre signaux d'or (latence, trafic, erreurs, saturation).
+Issue #44. Collecte et visualisation des métriques que Django expose sur `/metrics` depuis #45 : les quatre signaux d'or (latence, trafic, erreurs, saturation). Issue #48 : alertes par courriel, évaluées par Grafana lui-même (voir [Alertes](#alertes)).
 
 Les commandes suivent les conventions de [deploiement-production.md](deploiement-production.md) : **SERVEUR** désigne un shell sur le VPS, dans `~/e-commerce` ; **PORTABLE** le poste qui détient la clé age et l'alias SSH `$HOTE_SSH`.
 
@@ -9,7 +9,8 @@ Les commandes suivent les conventions de [deploiement-production.md](deploiement
 | Inclus | Exclu, volontairement |
 | --- | --- |
 | Prometheus, une seule tâche de collecte : les pods Django | kube-prometheus-stack, trop lourd pour le VPS |
-| Grafana, source de données et tableau de bord provisionnés | Alertmanager — issue #48 |
+| Grafana, source de données et tableau de bord provisionnés | Alertmanager séparé : Grafana embarque le sien (#48) |
+| Trois alertes par courriel, provisionnées par fichier (#48) | |
 | RBAC en lecture seule sur les pods de `dilane-shop` | Surveillance de Kubernetes, des nœuds, de PostgreSQL, de Prometheus lui-même |
 | | Tout accès public : ni Ingress, ni NodePort |
 
@@ -22,11 +23,13 @@ VPS de 4 Go, environ 2,2 Go libres, **sans swap** : un dépassement ne ralentit 
 | Composant | Mesuré | Requête | Limite | Plafond du ramasse-miettes Go |
 | --- | --- | --- | --- | --- |
 | Prometheus v3.13.3 | 21 à 35 Mi | 64 Mi | 128 Mi | automatique, 90 % de la limite |
-| Grafana 12.4.11 | 102 à 104 Mi | 128 Mi | 192 Mi | `GOMEMLIMIT=150MiB` |
+| Grafana 12.4.11, alertes comprises | 102 à 106 Mi | 128 Mi | 192 Mi | `GOMEMLIMIT=150MiB` |
 | Conteneur d'initialisation (chown) | — | 16 Mi | 32 Mi | — |
-| **Total** | **~140 Mi** | **192 Mi** | **320 Mi** | |
+| **Total** | **~145 Mi** | **192 Mi** | **320 Mi** | |
 
 Le conteneur d'initialisation de Prometheus s'exécute et se termine avant le démarrage de Prometheus : il ne s'ajoute pas au total.
+
+Activer les alertes (#48) a coûté environ 3 Mi à Grafana : 103 Mi sans, 106 Mi avec les trois règles évaluées chaque minute et un envoi de courriel. Aucun pod supplémentaire.
 
 Mesures faites avec les images épinglées et la configuration de ce dépôt, sous `docker run --read-only --memory`, face à Django 6.1.1 sous gunicorn (3 workers, configuration de production) recevant du trafic, tableau de bord interrogé. Sur le VPS, surveiller la consommation réelle après quelques jours :
 
@@ -118,6 +121,121 @@ Chacune des requêtes du tableau de bord a été exécutée à travers l'API de 
 
 Le tableau de bord n'est pas modifiable dans l'interface (`allowUiUpdates: false`) : la source de vérité est le fichier du dépôt. Pour le faire évoluer, l'éditer dans Grafana, l'exporter en JSON, remplacer le fichier, réappliquer la surcouche.
 
+## Alertes
+
+Issue #48. Grafana évalue lui-même trois règles contre Prometheus, chaque minute, et envoie un courriel par le relais SMTP de Brevo déjà utilisé par l'application. **Aucun Alertmanager séparé** : Grafana embarque le sien, qui groupe, répète et résout les notifications. Coût mesuré : environ 3 Mi de mémoire, aucun pod en plus.
+
+### Provisionnées comme code
+
+Grafana n'a pas de volume persistant : une règle ou un point de contact créé dans l'interface disparaîtrait au redémarrage. Tout est donc décrit par des fichiers, montés dans `/etc/grafana/provisioning/alerting` par le ConfigMap `grafana-alertes` :
+
+| Fichier | Contenu |
+| --- | --- |
+| [grafana/alertes/regles.yaml](../k8s/overlays/production/observabilite/grafana/alertes/regles.yaml) | les trois règles, dans le dossier « Dilane Shop » |
+| [grafana/alertes/points-de-contact.yaml](../k8s/overlays/production/observabilite/grafana/alertes/points-de-contact.yaml) | le point de contact `courriel-dilane-shop` → `wankamdypuedilane@gmail.com` |
+| [grafana/alertes/politique.yaml](../k8s/overlays/production/observabilite/grafana/alertes/politique.yaml) | la politique de notification : tout vers ce courriel, groupé par règle |
+
+Ces objets sont marqués « provisionnés » dans l'interface et n'y sont pas modifiables. Pour changer un seuil : éditer le fichier, réappliquer la surcouche ; l'empreinte du ConfigMap change et le pod Grafana redémarre avec la nouvelle version.
+
+Si un fichier est invalide, **Grafana refuse de démarrer** (`Failed to provision alerting` dans ses journaux) plutôt que de tourner sans alertes : le déploiement échoue visiblement, `kubectl rollout status` ne se termine pas.
+
+### Les trois règles
+
+Les seuils sont repérés par le mot **`SEUIL`** dans [regles.yaml](../k8s/overlays/production/observabilite/grafana/alertes/regles.yaml), chacun commenté.
+
+| Règle | Requête | Seuil | Durée (`for`) | Gravité |
+| --- | --- | --- | --- | --- |
+| Site injoignable | `sum(up{job="django"}) or vector(0)` | `< 1` pod | 2 min | critique |
+| Taux d'erreur 5xx élevé | part des réponses 5xx sur 5 min | `> 0,05` (5 %) | 2 min | critique |
+| Latence p95 élevée | `histogram_quantile(0.95, …[5m])` | `> 1` s | 2 min | avertissement |
+
+Toutes excluent `/metrics` et `/healthz/`, comme le tableau de bord.
+
+**Site injoignable.** `up` vaut 0 quand Prometheus n'obtient pas de réponse d'un pod ; mais si les pods n'existent plus du tout (Deployment à zéro, pods supprimés), la série `up` disparaît au lieu de valoir 0. `or vector(0)` couvre ce cas. Seuil à `1` : l'alerte part quand **aucun** pod ne répond ; le mettre à `2` pour être prévenu dès qu'un des deux replicas tombe.
+
+**Taux d'erreur 5xx : gardes contre le faible trafic.** La requête ne rend un résultat que si **au moins 20 requêtes** ont été servies en 5 minutes (`and on() sum(increase(…[5m])) >= 20`). Sans cette garde, une erreur sur deux requêtes à 4 h du matin ferait 50 %, et l'absence totale de trafic donnerait une division par zéro. Sous ce volume, la règle reste « Normal » (`noDataState: OK`). À l'inverse, `or vector(0)` sur le numérateur fait valoir 0 % quand aucune erreur n'a été vue, plutôt que « pas de donnée ».
+
+**Latence p95.** Même garde de volume : un p95 calculé sur trois requêtes n'a pas de sens. L'histogramme a des bornes à 0,5 s, 1 s et 2,5 s ; un seuil posé entre deux bornes est estimé par interpolation.
+
+**Ce que ces règles ne voient pas.** Seules les réponses produites par Django sont comptées. Les 502 et 503 qu'ingress-nginx renvoie lui-même quand aucun pod ne répond n'apparaissent pas dans `django_http_requests_total` ; ce cas est couvert par « Site injoignable ». Une panne de Prometheus lui-même produit une alerte distincte, `DatasourceError` (`execErrState: Error`), plutôt qu'une fausse alerte « Site injoignable ».
+
+**Délais.** Entre le début d'une panne et le courriel, compter environ 3 à 4 minutes : collecte toutes les 30 s, évaluation chaque minute, 2 minutes de `for`, 30 s de `group_wait`. Le courriel de résolution suit le `group_interval` : jusqu'à 5 minutes après le retour à la normale. Tant qu'une alerte reste active, un rappel part toutes les 4 heures (`repeat_interval`).
+
+Ces comportements ont été vérifiés :
+
+- **Expressions PromQL**, par `promtool test rules` sur des séries synthétiques : alerte 5xx et p95 sous fort trafic avec 10 % d'erreurs et des requêtes lentes ; aucune alerte avec 2 erreurs sur 3 requêtes, ni sans trafic (division par zéro), ni sans aucune série 5xx ; « Site injoignable » quand `up` vaut 0 comme quand ses séries disparaissent.
+- **De bout en bout**, avec Grafana 12.4.11, Prometheus v3.13.3 et Django sous gunicorn, un faux serveur SMTP (Mailpit) à la place de Brevo : les trois règles se chargent et s'évaluent sans erreur ; Django arrêté, « Site injoignable » passe à *Pending* puis *Alerting*, et le courriel `[FIRING:1] Site injoignable Dilane Shop (critique)` arrive environ 3 min 20 après l'arrêt, description rendue (« Pods Django répondant à Prometheus : 0 »), avec les liens vers l'alerte et le tableau de bord ; Django relancé, le courriel `[RESOLVED]` suit.
+- **SMTP**, face à un serveur exigeant STARTTLS et une authentification : l'envoi réussit avec la politique `MandatoryStartTLS` de production et les identifiants lus dans les fichiers du Secret ; une mauvaise clé est refusée (`535 Authentication credentials invalid`) et l'erreur remonte au test du point de contact.
+
+### Secret SMTP des alertes
+
+Grafana envoie par Brevo avec les mêmes identifiants que l'application. Ils sont dans `dilane-shop-secrets`, **dans l'espace de noms `dilane-shop`** ; un Secret n'est lisible que dans son propre espace de noms, et Grafana tourne dans `observabilite`.
+
+Solution retenue : **recopier les trois valeurs utiles dans un Secret propre à l'observabilité**, `grafana-smtp`, chiffré par SOPS comme les autres. Écartées :
+
+- donner à Grafana un accès à `dilane-shop-secrets` (RBAC entre espaces de noms, ou synchronisation de Secrets) : Grafana obtiendrait aussi les clés Stripe, le mot de passe de la base et la clé secrète de Django ;
+- déplacer Grafana dans `dilane-shop` : même problème, et l'isolement de la pile d'observabilité serait perdu.
+
+Contrepartie : une rotation de la clé Brevo doit être reportée dans les deux fichiers.
+
+Emplacement : **`k8s/overlays/production/observabilite/grafana-smtp.sops.yaml`**, couvert par la règle `k8s/.*\.sops\.yaml$` de [.sops.yaml](../.sops.yaml). Trois clés :
+
+| Clé | Recopiée depuis | Variable Grafana |
+| --- | --- | --- |
+| `smtp-user` | `BREVO_SMTP_LOGIN` | `GF_SMTP_USER__FILE` |
+| `smtp-password` | `BREVO_SMTP_KEY` | `GF_SMTP_PASSWORD__FILE` |
+| `from-address` | `EMAIL_FROM` | `GF_SMTP_FROM_ADDRESS__FILE` |
+
+L'expéditeur est celui de l'application : Brevo n'accepte que des expéditeurs validés dans le compte, et celui-ci l'est déjà. Le nom affiché est « Dilane Shop — alertes » (`GF_SMTP_FROM_NAME`, non secret). Serveur `smtp-relay.brevo.com:587`, STARTTLS obligatoire (`MandatoryStartTLS`) : Grafana refuse d'envoyer plutôt que de transmettre les identifiants en clair.
+
+**PORTABLE** — depuis la racine du dépôt. Les valeurs sont déchiffrées vers un tube et rechiffrées aussitôt : aucune copie en clair n'est écrite sur le disque, et aucune valeur n'apparaît à l'écran.
+
+```bash
+SRC=k8s/overlays/production/secrets.sops.yaml
+DEST=k8s/overlays/production/observabilite/grafana-smtp.sops.yaml
+valeur() {  # extrait une clé du Secret applicatif, protégée pour YAML
+  sops --decrypt --extract "[\"stringData\"][\"$1\"]" "$SRC" | sed "s/'/''/g"
+}
+{
+  printf 'apiVersion: v1\nkind: Secret\nmetadata:\n  name: grafana-smtp\n  namespace: observabilite\ntype: Opaque\nstringData:\n'
+  printf "  smtp-user: '%s'\n"     "$(valeur BREVO_SMTP_LOGIN)"
+  printf "  smtp-password: '%s'\n" "$(valeur BREVO_SMTP_KEY)"
+  printf "  from-address: '%s'\n"  "$(valeur EMAIL_FROM)"
+} | sops --encrypt --filename-override "$DEST" --input-type yaml --output-type yaml /dev/stdin > "$DEST"
+```
+
+Vérifier ensuite que `git diff` montre les trois noms de clés en clair et les valeurs sous forme `ENC[…]`, et qu'aucune autre clé n'a été recopiée. Cette commande a été essayée avec sops 3.13.3 et une clé age jetable, sur un faux Secret applicatif : seules les trois clés sont recopiées, et une valeur contenant une apostrophe, un deux-points et un dièse est restituée à l'identique.
+
+### Tester une alerte sans attendre une panne
+
+Trois niveaux, du plus simple au plus complet. Tous passent par le tunnel SSH décrit dans [Accéder à Grafana](#accéder-à-grafana-et-à-prometheus).
+
+**1. Le point de contact : le SMTP fonctionne-t-il ?** Dans Grafana : *Alerting → Contact points → courriel-dilane-shop → Test*, puis *Send test notification*. Un courriel `[FIRING:1] TestAlert` doit arriver dans la boîte `wankamdypuedilane@gmail.com` en moins d'une minute. Une erreur d'identifiants Brevo ou de STARTTLS s'affiche directement dans l'interface. Sans navigateur, depuis le serveur :
+
+```bash
+# SERVEUR
+kubectl exec -n observabilite deploy/grafana -- sh -c '
+  AUTH=$(printf "%s:%s" "$(cat /etc/grafana-admin/admin-user)" "$(cat /etc/grafana-admin/admin-password)" | base64 -w0)
+  wget -qO- --header "Authorization: Basic $AUTH" --header "Content-Type: application/json" \
+    --post-data "{\"receivers\":[{\"name\":\"courriel-dilane-shop\",\"grafana_managed_receiver_configs\":[{\"uid\":\"courriel-dilane-shop\",\"name\":\"courriel-dilane-shop\",\"type\":\"email\",\"settings\":{\"addresses\":\"wankamdypuedilane@gmail.com\"}}]}]}" \
+    http://localhost:3000/api/alertmanager/grafana/config/api/v1/receivers/test' \
+  | grep -o '"status":"[a-z]*"\|"error":"[^"]*"'
+```
+
+Attendu : `"status":"ok"`, et le courriel reçu. Vérifier aussi qu'il n'est pas classé en indésirables.
+
+**2. La chaîne complète : règle → politique → courriel.** Le test du point de contact ne passe ni par une règle ni par la politique. Pour les éprouver sans panne, créer une règle temporaire qui se déclenche d'elle-même : *Alerting → Alert rules → New alert rule*, requête `sum(rate(django_http_requests_total{job="django"}[5m]))`, seuil *IS ABOVE* `0` (toujours vrai : les collectes de Prometheus suffisent), dossier « Dilane Shop », pending period `1m`. Le courriel `[FIRING:1] …` arrive en 2 à 3 minutes (vérifié dans l'environnement d'essai : environ 2 minutes, dossier provisionné compris) ; supprimer ensuite la règle, le courriel `[RESOLVED]` suit dans les 5 minutes. Une règle créée dans l'interface disparaît de toute façon au prochain redémarrage de Grafana, ce qui garantit qu'aucun test ne reste en place.
+
+**3. Une vraie règle, par un test de charge.** La règle « Latence p95 élevée » sera déclenchée par un **test de charge k6** : chaque pod Django n'a que 3 workers gunicorn synchrones, une charge soutenue sur les pages du catalogue fait monter les requêtes en attente, et donc le p95 au-delà d'une seconde. Le même test vérifie au passage la garde de volume (plus de 20 requêtes en 5 minutes) et, selon la charge atteinte, la saturation du tableau de bord. Ce test de charge est à écrire ; à lancer hors des heures d'affluence, depuis une machine extérieure au VPS (k6 sur le VPS consommerait la mémoire qu'il est censé éprouver), en surveillant `kubectl top pods -A`. La règle 5xx ne se provoque pas proprement en production (aucune route n'échoue volontairement) : elle a été vérifiée par les tests `promtool` décrits plus haut.
+
+La règle « Site injoignable » peut être éprouvée pour de bon lors d'une maintenance planifiée, par `kubectl scale -n dilane-shop deploy/django --replicas=0` puis `--replicas=2` : c'est une vraie coupure du site, à réserver à ce cas.
+
+### Limites connues
+
+- **État en mémoire.** L'Alertmanager intégré garde ses silences et son journal d'envoi dans la base SQLite de Grafana, donc dans l'`emptyDir` : un redémarrage de Grafana efface les silences, et une alerte encore active peut être notifiée une seconde fois.
+- **Quota Brevo.** Les courriels d'alerte consomment le même quota d'envoi que les courriels transactionnels de la boutique. Le groupement par règle et le rappel toutes les 4 heures limitent le volume.
+- **Un seul canal.** Si Brevo ou la boîte de réception est indisponible, l'alerte n'arrive pas, et rien ne le signale. Un second point de contact (webhook, messagerie) serait le remède.
+
 ## Secret Grafana
 
 Le compte administrateur est lu dans le Secret `grafana-admin` (clés `admin-user` et `admin-password`), monté en fichiers et lu par la syntaxe `GF_SECURITY_ADMIN_*__FILE` : la valeur n'apparaît ni dans le manifeste, ni dans les variables d'environnement du pod.
@@ -155,7 +273,7 @@ La base interne de Grafana vit dans un `emptyDir` et repart de zéro à chaque d
 
 ## Déployer
 
-Prérequis : l'application déjà déployée (espace de noms `dilane-shop` existant), et le Secret ci-dessus créé et commité.
+Prérequis : l'application déjà déployée (espace de noms `dilane-shop` existant), et les deux Secrets `grafana-admin` et `grafana-smtp` créés et commités (voir [Secret Grafana](#secret-grafana) et [Secret SMTP des alertes](#secret-smtp-des-alertes)). Sans `grafana-smtp`, le pod Grafana reste en `ContainerCreating` : le volume qui monte ce Secret ne peut pas être créé.
 
 **Mémoire pendant le déploiement.** L'ajout des annotations et de `POD_IP` modifie le modèle de pod de Django : l'application de la surcouche déclenche une mise à jour progressive (`maxSurge: 1`), donc un troisième pod Django pendant quelques dizaines de secondes (256 Mi réservés, 512 Mi au plus). Lancer le déploiement hors des heures chargées, et vérifier la marge avant : `free -m` sur le serveur.
 
@@ -171,6 +289,8 @@ kubectl apply -f k8s/overlays/production/observabilite/00-namespace.yaml
 
 ```bash
 sops --decrypt k8s/overlays/production/observabilite/grafana-admin.sops.yaml \
+  | ssh $HOTE_SSH "kubectl apply -f -"
+sops --decrypt k8s/overlays/production/observabilite/grafana-smtp.sops.yaml \
   | ssh $HOTE_SSH "kubectl apply -f -"
 ```
 
@@ -232,6 +352,17 @@ curl -s -o /dev/null -w "%{http_code}\n" https://dilane-shop.store/metrics
 
 Attendu : `404`.
 
+**SERVEUR** — les trois règles d'alerte sont chargées et s'évaluent sans erreur
+
+```bash
+kubectl exec -n observabilite deploy/grafana -- sh -c '
+  AUTH=$(printf "%s:%s" "$(cat /etc/grafana-admin/admin-user)" "$(cat /etc/grafana-admin/admin-password)" | base64 -w0)
+  wget -qO- --header "Authorization: Basic $AUTH" http://localhost:3000/api/prometheus/grafana/api/v1/rules' \
+  | grep -o '"state":"[a-zA-Z]*","name":"[^"]*"\|"health":"[a-z]*"'
+```
+
+Attendu : les trois règles (`Site injoignable`, `Taux d'erreur 5xx élevé`, `Latence p95 élevée`), chacune `"health":"ok"`, et `"state":"inactive"` quand tout va bien. Les identifiants sont lus dans le Secret monté, à l'intérieur du pod : ils n'apparaissent ni sur la ligne de commande ni dans l'historique du shell. Pour l'envoi du courriel lui-même, voir [Tester une alerte](#tester-une-alerte-sans-attendre-une-panne).
+
 **SERVEUR** — consommation réelle
 
 ```bash
@@ -263,7 +394,7 @@ puis <http://localhost:9090/targets>.
 ## Retirer la pile
 
 ```bash
-kubectl delete namespace observabilite                       # Prometheus, Grafana, données
+kubectl delete namespace observabilite                       # Prometheus, Grafana, alertes, données
 kubectl delete priorityclass observabilite-faible-priorite
 kubectl delete role,rolebinding -n dilane-shop prometheus-decouverte
 ```
