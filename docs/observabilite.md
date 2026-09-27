@@ -242,19 +242,22 @@ Le script [scripts/k6/catalogue.js](../scripts/k6/catalogue.js) produit un trafi
 
 ### Ce que fait le script
 
-Chaque utilisateur virtuel enchaîne deux **GET**, avec une pause de 0,5 s après chacun :
+Chaque itération suit une visite de catalogue : trois **GET**, avec une pause de 0,5 s après chacun.
 
-- `/` : la page d'accueil, liste paginée des produits ;
-- `/api/produits/?item-name=livre` : la recherche de produits, en JSON.
+1. `/` : la page d'accueil, liste paginée des produits ;
+2. `/api/produits/?item-name=Casque` : la recherche de produits, en JSON ;
+3. `/<id>` : la fiche du **premier produit renvoyé par la recherche** (route `detail` de `shop/urls.py`).
 
 Aucun checkout, paiement, création de compte ni écriture.
 
+**Terme de recherche.** « Casque » par défaut, modifiable par `-e TERME_RECHERCHE=…`. Le terme est encodé dans l'URL (`encodeURIComponent`) : espaces, accents, `&` ou `#` ne peuvent ni casser la requête ni ajouter de paramètre. Il doit compter de 1 à 64 caractères, sinon le test refuse de démarrer. Surtout, il doit **trouver au moins un produit** dans le catalogue visé : dans le catalogue de démonstration (`fixtures/demo-catalogue.json`), « Casque » trouve « Casque Audio Premium ». Avant de viser la production, vérifier que le terme y trouve bien un produit, ou en choisir un autre.
+
 | Mode | Profil | Volume |
 | --- | --- | --- |
-| `smoke` (défaut) | 1 utilisateur virtuel, 5 itérations | 10 requêtes |
+| `smoke` (défaut) | 1 utilisateur virtuel, 5 itérations | 15 requêtes si le parcours réussit (10 si la recherche ne trouve rien : la fiche est alors sautée) |
 | `charge` | montée 1 min, palier 8 min, descente 1 min | 6 utilisateurs virtuels par défaut, 8 au plus (`VUS`) |
 
-Chaque utilisateur virtuel attend la réponse avant d'envoyer la requête suivante. Le débit est donc borné : environ 2 requêtes par seconde et par utilisateur virtuel tant que les réponses sont rapides, soit environ 12 req/s à 6 VUS et 16 req/s à 8 VUS. Il baisse si le site ralentit.
+Chaque utilisateur virtuel attend la réponse avant d'envoyer la requête suivante. Le débit est donc borné : environ 2 requêtes par seconde et par utilisateur virtuel tant que les réponses sont rapides (3 requêtes par itération, 1,5 s de pause), soit environ 12 req/s à 6 VUS et 16 req/s à 8 VUS. Il baisse si le site ralentit.
 
 ### Garde-fous
 
@@ -264,9 +267,13 @@ Chaque utilisateur virtuel attend la réponse avant d'envoyer la requête suivan
 - **Arrêt automatique**, 10 s après le début au plus tôt, dès que l'un de ces seuils est franchi :
   - 2 % de requêtes en échec (erreur réseau ou statut ≥ 400) ;
   - p95 côté client de 5 secondes ;
-  - moins de 98 % de réponses HTTP 200.
+  - moins de 98 % de réponses HTTP 200 ;
+  - **une seule** recherche répondue en 200 mais inexploitable : liste vide, JSON illisible, ou premier produit sans identifiant entier positif (métrique `recherches_inexploitables`) ;
+  - **une seule** fiche répondue en 200 mais pas en HTML (métrique `fiches_non_html`).
 
-Le smoke dure environ 5 secondes, moins que ce délai : ses seuils sont jugés à la fin, et un seul échec sur ses 10 requêtes suffit à le faire échouer.
+Les deux derniers seuils sont stricts parce qu'ils ne décrivent pas une défaillance passagère sous charge, mais un terme ou un catalogue inadapté, ou une route qui ne rend pas ce qu'elle devrait. Une recherche en erreur HTTP (5xx, délai dépassé) relève, elle, des trois premiers seuils, qui tolèrent de rares échecs ; la fiche est alors sautée pour cette itération.
+
+Le smoke dure environ 8 secondes, moins que ce délai : ses seuils sont jugés à la fin, et un seul échec sur ses 15 requêtes suffit à le faire échouer.
 
 Un refus survient avant tout envoi : aucune requête ne part. Les requêtes du test portent le User-Agent `dilane-shop-k6-catalogue/1.0`, qui permet de les isoler dans les journaux d'ingress-nginx. Codes de sortie de k6 : `0` réussite, `99` seuil franchi, `107` refus à la lecture des variables, `108` refus au contrôle des scénarios.
 
@@ -279,11 +286,15 @@ Depuis le **portable** ou une autre machine extérieure au VPS, jamais depuis le
 alias k6='docker run --rm -i -v "$PWD/scripts/k6:/scripts/k6:ro" -w / grafana/k6:2.3.0'
 ```
 
-**Smoke** : 10 requêtes, pour vérifier que le script et la cible répondent. À faire avant toute charge.
+**Smoke** : 15 requêtes, pour vérifier que le script et la cible répondent, et que le terme de recherche trouve un produit. À faire avant toute charge.
 
 ```bash
 k6 run -e CIBLE=https://dilane-shop.store scripts/k6/catalogue.js
+# Autre terme de recherche :
+k6 run -e CIBLE=https://dilane-shop.store -e TERME_RECHERCHE="Enceinte" scripts/k6/catalogue.js
 ```
+
+Le résumé doit afficher `http_reqs` à 15 et `checks_succeeded` à 100 %. Un smoke qui se termine en code `99` avec `recherches_inexploitables` à 5 signale un terme qui ne trouve rien dans ce catalogue.
 
 **Charge** : 10 minutes. À lancer hors des heures d'affluence, avec le tableau de bord ouvert, et en surveillant la mémoire du VPS (`free -m`, `kubectl top pods -A`) dans un autre terminal.
 
@@ -305,10 +316,10 @@ Tableau de bord *Dilane Shop — signaux d'or*, période « Last 30 minutes », 
 | --- | --- |
 | Pods Django collectés | 2 en permanence. Une baisse signale un pod redémarré, par exemple tué pour dépassement de mémoire. |
 | Trafic — requêtes / s | le débit de k6 (environ 12 req/s à 6 VUS), réparti à peu près également entre les deux pods, en plus du trafic réel. La montée et la descente d'une minute sont visibles. |
-| Erreurs — part des réponses | 5xx à 0. Les 4xx n'augmentent pas : les deux routes répondent 200. |
+| Erreurs — part des réponses | 5xx à 0. Les 4xx n'augmentent pas : les trois routes répondent 200. |
 | Latence — p50 et p95 | la latence mesurée **dans Django**. C'est elle que surveille la règle d'alerte. |
 | Saturation — requêtes en cours | 0 à 1 le plus souvent. 3 sur un pod veut dire que ses 3 workers sont tous occupés. |
-| Latence p95 par route | `home` et `search_products` séparément. |
+| Latence p95 par route | `home`, `search_products` et `detail` séparément. La fiche produit est la seule des trois à lire un produit précis. |
 
 Dans *Alerting → Alert rules*, la règle « Latence p95 élevée » est en « Normal (NoData) » tant que le site reçoit moins de 20 requêtes en 5 minutes (garde de volume). Pendant le test, elle passe à **« Normal »** : elle est alors réellement évaluée. Elle ne passe en *Pending*, puis en *Alerting* 2 minutes plus tard, que si le p95 mesuré dans Django dépasse 1 seconde. Le courriel suit alors dans les 30 s (`group_wait`), puis un courriel de résolution après la fin du test.
 
@@ -331,12 +342,16 @@ La latence k6 est donc **toujours plus élevée** que celle de Grafana, de la du
 Rien ne garantit que cette charge fasse passer la règle en *Alerting*, et c'est même peu probable :
 
 - **La charge est bornée.** Chaque utilisateur virtuel attend sa réponse avant de continuer : au plus 8 requêtes sont en cours à la fois, pour 6 workers (2 pods × 3). Au pire, deux requêtes attendent un worker, et cette attente est invisible pour Django (voir ci-dessus).
-- **Le catalogue est léger.** La page d'accueil pagine par 4 produits, et la recherche est limitée à 24 résultats.
-- **Mesure locale de référence**, sur un seul pod Django (3 workers gunicorn, 2 CPU, SQLite, catalogue de démonstration de 30 objets), 6 VUS pendant 10 minutes : 6 406 requêtes, environ 11,9 req/s en palier, 100 % de 200, p95 k6 de 7,6 ms, p95 Django de l'ordre de 10 ms, 6 % de CPU pour Django, règle restée « Normal ». Ce n'est pas le VPS (processeur, PostgreSQL, réseau, TLS et ingress diffèrent), mais l'écart avec le seuil d'une seconde est de deux ordres de grandeur.
+- **Le catalogue est léger.** La page d'accueil pagine par 4 produits, la recherche est limitée à 24 résultats, et la fiche lit un seul produit.
+- **Mesures de l'ancien parcours.** Avant le parcours à trois requêtes, le script ne faisait que deux GET, `/` et `/api/produits/?item-name=livre`, et cette recherche **ne trouvait aucun produit** : elle rendait une liste vide, moins coûteuse qu'une recherche fructueuse, et aucune fiche n'était ouverte. Les deux résultats ci-dessous concernent ce parcours et **ne valent pas pour le parcours actuel** à trois requêtes :
+  - test du 27/09/2026 : 5 912 requêtes, 0 échec, p95 côté k6 de 74,86 ms ;
+  - mesure locale, sur un seul pod Django (3 workers gunicorn, 2 CPU, SQLite, catalogue de démonstration de 30 objets), 6 VUS pendant 10 minutes : 6 406 requêtes, environ 11,9 req/s en palier, 100 % de 200, p95 k6 de 7,6 ms, p95 Django de l'ordre de 10 ms, 6 % de CPU pour Django, règle restée « Normal ». Ce n'était pas le VPS (processeur, PostgreSQL, réseau, TLS et ingress diffèrent).
+
+  Le nouveau parcours n'a pas encore été mesuré sous charge. Il ajoute, à chaque itération, une recherche qui trouve des produits et l'ouverture d'une fiche : ses latences ne se déduisent pas des chiffres ci-dessus, seule une nouvelle mesure les donnera.
 
 Si le p95 de Grafana reste sous 1 s, c'est un **résultat** : l'application tient cette charge. Il ne faut pas monter les VUS pour forcer l'alerte : le plafond de 8 protège le VPS, qui n'a pas de swap. Pour vérifier la chaîne « règle → politique → courriel », utiliser la règle temporaire décrite dans [Tester une alerte](#tester-une-alerte-sans-attendre-une-panne) : c'est un test distinct du test k6.
 
-Le catalogue de démonstration ne contient aucun produit dont le titre comporte « livre » : sur une base chargée avec ce seul jeu de données, la recherche rend une liste vide et coûte moins cher qu'une recherche fructueuse.
+Si le terme de recherche ne trouve rien dans le catalogue visé, le test échoue au lieu de mesurer un parcours vide : c'est ce qui rendait l'ancien parcours peu représentatif.
 
 ## Secret Grafana
 
