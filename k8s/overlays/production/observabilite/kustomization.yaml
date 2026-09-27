@@ -1,0 +1,45 @@
+# Pile d'observabilité de la production (issue #44) : Prometheus et Grafana.
+#
+# Propre à la production, donc hors de k8s/base : le cluster kind du poste
+# de développement n'en a pas l'usage, et 4 Go de mémoire sans swap
+# imposent de ne rien y déployer d'inutile. Incluse par la surcouche de
+# production (../kustomization.yaml), elle s'applique aussi seule :
+#
+#   kubectl apply -k k8s/overlays/production/observabilite
+#
+# Budget mémoire, limites strictes : Prometheus 128 Mi, Grafana 192 Mi,
+# soit 320 Mi au plus ; 192 Mi réservés (requests). Voir
+# docs/observabilite.md.
+#
+# Comme pour l'application, le Secret (grafana-admin.sops.yaml) n'est pas
+# listé ici : ses valeurs sont chiffrées et s'appliquent à part.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - 00-namespace.yaml
+  - 01-prometheus-rbac.yaml
+  - prometheus.yaml
+  - grafana.yaml
+
+# Configuration générée à partir des fichiers de ce répertoire. Kustomize
+# ajoute au nom une empreinte du contenu et reporte ce nom dans les
+# Deployments : modifier un fichier redémarre le pod concerné au prochain
+# « kubectl apply », sans redémarrage manuel.
+configMapGenerator:
+  - name: prometheus-config
+    namespace: observabilite
+    files:
+      - prometheus.yml
+  - name: grafana-sources-de-donnees
+    namespace: observabilite
+    files:
+      - grafana/datasource.yaml
+  - name: grafana-fournisseurs
+    namespace: observabilite
+    files:
+      - grafana/dashboards.yaml
+  - name: grafana-tableaux-de-bord
+    namespace: observabilite
+    files:
+      - grafana/signaux-dor.json

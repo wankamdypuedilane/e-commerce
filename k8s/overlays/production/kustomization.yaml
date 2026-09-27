@@ -9,6 +9,8 @@ kind: Kustomization
 resources:
   - ../../base
   - tls.yaml
+  # Prometheus et Grafana (issue #44), propres à la production.
+  - observabilite
 
 # Registre et etiquette de l'image publiee par la CI. Elle publie aussi
 # l'image sous l'identifiant du commit : remplacer newTag par cet
@@ -28,3 +30,5 @@ patches:
   - path: patch-configmap.yaml
   # Politique de telechargement de l'image, pour le Deployment et le Job.
   - path: patch-images.yaml
+  # Annotations de collecte Prometheus et IP du pod dans ALLOWED_HOSTS.
+  - path: patch-django-metriques.yaml

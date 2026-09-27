@@ -1,0 +1,18 @@
+# Source de données provisionnée au démarrage de Grafana (issue #44).
+#
+# uid fixe : le tableau de bord signaux-dor.json y fait référence. Modifier
+# l'un impose de modifier l'autre.
+apiVersion: 1
+datasources:
+  - name: Prometheus
+    uid: prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus.observabilite.svc.cluster.local:9090
+    isDefault: true
+    editable: false
+    jsonData:
+      # Doit égaler scrape_interval de prometheus.yml : Grafana en déduit
+      # $__rate_interval, la fenêtre minimale d'un rate() fiable.
+      timeInterval: 30s
+      httpMethod: POST

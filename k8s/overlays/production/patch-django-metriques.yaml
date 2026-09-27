@@ -1,0 +1,43 @@
+# Collecte des métriques de Django par Prometheus (issue #44).
+#
+# Propre à la production, où tourne Prometheus : le cluster kind du poste
+# n'a pas de pile d'observabilité.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: django
+  namespace: dilane-shop
+spec:
+  template:
+    metadata:
+      annotations:
+        # Lues par la configuration de collecte (observabilite/prometheus.yml) :
+        # la première autorise la collecte, les deux autres disent où.
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8000"
+        prometheus.io/path: "/metrics"
+    spec:
+      containers:
+        - name: django
+          env:
+            # Prometheus interroge chaque pod sur son IP : sa requête porte
+            # donc l'en-tête « Host: <IP du pod>:8000 ». Django la refuse en
+            # 400 (DisallowedHost) si cette IP n'est pas dans ALLOWED_HOSTS
+            # — vérifié sous gunicorn avec la configuration de production.
+            # Prometheus ne permet pas de forcer l'en-tête Host, et l'IP d'un
+            # pod change à chaque redémarrage : on l'ajoute donc ici, par
+            # l'API descendante (downward API).
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            # Redéfinit la variable issue du ConfigMap (envFrom) en lui
+            # ajoutant l'IP du pod. $(DJANGO_ALLOWED_HOSTS) désigne ici la
+            # valeur du ConfigMap : le kubelet charge d'abord les variables
+            # d'envFrom, puis développe chaque entrée « env » avec elles et
+            # avec les entrées qui précèdent, avant de la remplacer (fonction
+            # makeEnvironmentVariables de pkg/kubelet/kubelet_pods.go). POD_IP
+            # doit donc rester au-dessus. La liste des domaines reste définie
+            # à un seul endroit, patch-configmap.yaml.
+            - name: DJANGO_ALLOWED_HOSTS
+              value: "$(DJANGO_ALLOWED_HOSTS),$(POD_IP)"

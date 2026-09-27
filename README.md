@@ -655,6 +655,7 @@ Les pages de confirmation et de retour de paiement exigent une connexion et n’
 - [.github/workflows/README.md](.github/workflows/README.md) — étapes du workflow CI, dans l’ordre.
 - [docs/definition-of-done.md](docs/definition-of-done.md) — critères qu'une tâche doit remplir pour être considérée comme terminée, chacun issu d'un défaut réel du projet.
 - [docs/deploiement-production.md](docs/deploiement-production.md) — procédure reproductible du déploiement sur VPS, du serveur nu au site en HTTPS.
+- [docs/observabilite.md](docs/observabilite.md) — Prometheus et Grafana en production : collecte par pod, budget mémoire, déploiement, accès par redirection de port.
 
 ## Suivi du projet
 
