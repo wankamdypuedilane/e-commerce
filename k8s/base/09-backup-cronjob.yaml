@@ -1,0 +1,168 @@
+# Sauvegarde quotidienne de PostgreSQL (issue #83).
+#
+# Un CronJob lance chaque nuit un pg_dump de la base dans un volume dedie,
+# compresse, horodate, et ne conserve que les 7 sauvegardes les plus recentes.
+#
+# Limite a connaitre : le volume est fourni par la classe de stockage par
+# defaut du cluster (local-path sous k3s), donc ecrit sur le disque du noeud.
+# Il protege d'une erreur logique — suppression involontaire, migration ratee,
+# donnees corrompues — mais pas de la perte de la machine. Sortir les
+# sauvegardes du noeud reste a faire.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: sauvegardes-postgres
+  namespace: dilane-shop
+  labels:
+    app.kubernetes.io/name: sauvegardes-postgres
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 2Gi
+  # Aucune storageClassName : la classe par defaut du cluster s'applique.
+  # Sous k3s, local-path est en WaitForFirstConsumer — la revendication
+  # reste donc Pending jusqu'au premier lancement du CronJob, ce qui est
+  # normal et non un echec.
+
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: sauvegarde-postgres
+  namespace: dilane-shop
+  labels:
+    app.kubernetes.io/name: sauvegarde-postgres
+spec:
+  # Chaque nuit a 03h00, heure de Paris. Sans timeZone, l'horaire serait
+  # interprete dans le fuseau du gestionnaire de controleurs, en pratique UTC,
+  # et se decalerait d'une heure entre l'hiver et l'ete.
+  schedule: "0 3 * * *"
+  timeZone: Europe/Paris
+  concurrencyPolicy: Forbid      # jamais deux sauvegardes en parallele
+  startingDeadlineSeconds: 3600  # noeud eteint a 03h00 : rattrapage dans l'heure
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: sauvegarde-postgres
+        spec:
+          restartPolicy: OnFailure
+          securityContext:
+            # 70 est l'utilisateur postgres de l'image Alpine. La sauvegarde
+            # n'a aucun besoin des droits de root.
+            runAsUser: 70
+            runAsGroup: 70
+            # fsGroup demande au kubelet de donner le volume a ce groupe. Le
+            # conteneur d'initialisation ci-dessous fait le meme travail, par
+            # securite : fsGroup n'est pas honore par tous les types de volume,
+            # et un PersistentVolume de type hostPath — ce que produit
+            # local-path sous k3s — en fait partie.
+            fsGroup: 70
+          initContainers:
+            # Sans ce conteneur, l'ecriture echouerait avec « Permission
+            # denied » si le repertoire du volume appartient a root. Verifie :
+            # c'est le comportement observe sur un volume neuf.
+            - name: preparer-volume
+              image: postgres:17-alpine
+              securityContext:
+                runAsUser: 0        # le chown exige root ; lui seul l'obtient
+              command:
+                - /bin/sh
+                - -c
+                - chown 70:70 /sauvegardes && chmod 750 /sauvegardes
+              volumeMounts:
+                - name: sauvegardes
+                  mountPath: /sauvegardes
+              resources:
+                requests:
+                  memory: "16Mi"
+                  cpu: "10m"
+                limits:
+                  memory: "64Mi"
+                  cpu: "100m"
+          containers:
+            - name: sauvegarde
+              # MEME version majeure que le serveur : pg_dump refuse une base
+              # dont la version est plus recente que la sienne.
+              image: postgres:17-alpine
+              env:
+                # Nom de la base et utilisateur : ConfigMap, comme le
+                # StatefulSet postgres. Ce ne sont pas des secrets.
+                - name: POSTGRES_DB
+                  valueFrom:
+                    configMapKeyRef:
+                      name: dilane-shop-config
+                      key: DB_NAME
+                - name: POSTGRES_USER
+                  valueFrom:
+                    configMapKeyRef:
+                      name: dilane-shop-config
+                      key: DB_USER
+                # Mot de passe par PGPASSWORD, que pg_dump lit dans
+                # l'environnement : jamais en argument de ligne de commande,
+                # ou il apparaitrait dans ps et dans les journaux.
+                - name: PGPASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: dilane-shop-secrets
+                      key: DB_PASSWORD
+                # Horodatage des fichiers en heure locale, cohérent avec
+                # le timeZone du declenchement.
+                - name: TZ
+                  value: Europe/Paris
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  set -eu
+                  # pipefail est indispensable : sans lui, un pg_dump en echec
+                  # suivi d'un gzip qui reussit donnerait un code de sortie nul,
+                  # et une sauvegarde tronquee passerait pour valide.
+                  set -o pipefail
+
+                  repertoire=/sauvegardes
+                  horodatage=$(date +%Y%m%d-%H%M)
+                  fichier="$repertoire/dilane-shop-$horodatage.sql.gz"
+
+                  echo "Sauvegarde de $POSTGRES_DB vers $fichier"
+
+                  # Ecriture sous un nom temporaire, renomme seulement en cas
+                  # de succes : une sauvegarde interrompue ne laisse pas de
+                  # fichier d'apparence valide, que la rotation compterait.
+                  pg_dump \
+                    --host=postgres \
+                    --username="$POSTGRES_USER" \
+                    --dbname="$POSTGRES_DB" \
+                    --no-password \
+                    | gzip -c > "$fichier.partiel"
+                  mv "$fichier.partiel" "$fichier"
+
+                  echo "Termine : $(ls -lh "$fichier" | awk '{print $5}')"
+
+                  # Rotation : les 7 plus recentes sont conservees, le reste
+                  # est supprime. Les fichiers .partiel d'executions
+                  # interrompues sont nettoyes au passage.
+                  ls -1t "$repertoire"/dilane-shop-*.sql.gz | tail -n +8 | xargs -r rm -f
+                  find "$repertoire" -name '*.partiel' -mtime +1 -delete
+
+                  echo "Sauvegardes conservees :"
+                  ls -1t "$repertoire"/dilane-shop-*.sql.gz
+              volumeMounts:
+                - name: sauvegardes
+                  mountPath: /sauvegardes
+              resources:
+                requests:
+                  memory: "64Mi"
+                  cpu: "50m"
+                limits:
+                  memory: "256Mi"
+                  cpu: "500m"
+          volumes:
+            - name: sauvegardes
+              persistentVolumeClaim:
+                claimName: sauvegardes-postgres
