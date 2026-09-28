@@ -15,7 +15,8 @@ Ce projet a été construit pour aller au-delà d’une simple application web:
 - PostgreSQL en service séparé
 - Gunicorn et WhiteNoise pour servir l’application et ses fichiers statiques
 - Kubernetes pour l’orchestration : replicas, sondes de santé, mises à jour sans coupure
-- GitHub Actions pour l’intégration continue : scan des dépendances, analyse statique, scan de l’image, tests dans l’image, test de fumée du conteneur
+- GitHub Actions pour l’intégration continue : scan des dépendances, analyse statique, scan de l’image, tests dans l’image, test de fumée du conteneur, publication de l’image sur GHCR
+- Prometheus et Grafana pour superviser la production : quatre signaux d’or, alertes par courriel
 
 ## Fonctionnalités
 
@@ -36,13 +37,14 @@ Ce projet a été construit pour aller au-delà d’une simple application web:
 - Django 6.1 — versions exactes de toutes les dépendances : `requirements.txt`
 - PostgreSQL 17
 - Docker et Docker Compose
-- Kubernetes (kind en local, k3s visé en production)
+- Kubernetes (kind en local, k3s en production sur un VPS OVH, site en ligne sur https://dilane-shop.store)
 - ingress-nginx et cert-manager pour l’exposition HTTPS
 - Gunicorn (3 workers, timeout 60 s)
 - WhiteNoise pour les fichiers statiques
 - Stripe pour les paiements
 - Brevo SMTP pour les emails transactionnels
-- GitHub Actions pour l’intégration continue
+- GitHub Actions pour l’intégration continue et la publication de l’image sur GHCR
+- Prometheus et Grafana pour la supervision en production, alertes par courriel (voir [docs/observabilite.md](docs/observabilite.md))
 
 ## Prérequis
 
@@ -225,7 +227,7 @@ Chaque réponse porte une politique de sécurité du contenu (CSP), native dans 
 - **Scripts** : seuls s'exécutent les fichiers du site, de `cdn.jsdelivr.net` et de `code.jquery.com`, et les scripts en ligne qui portent le jeton de la page. Un script injecté sans ce jeton est bloqué par le navigateur.
 - **Styles** : exception assumée, `'unsafe-inline'` est autorisé. Les jetons ne s'appliquent pas aux attributs `style=` écrits dans le HTML, et une injection de style est bien moins grave qu'une injection de script.
 - **Formulaires** : ils ne peuvent être envoyés qu'au site et à `checkout.stripe.com`, pour la redirection vers le paiement. Cette redirection n'a pas encore été vérifiée avec de vraies clés Stripe.
-- **Strict-Transport-Security** n'est pas envoyé : il est reporté à l'issue #42, avec un certificat reconnu.
+- **Strict-Transport-Security** n'est pas envoyé : `SECURE_HSTS_SECONDS` vaut 0 et aucune surcouche ne le fixe. Il était reporté à l'issue #42, dans l'attente d'un certificat reconnu ; la production en a un depuis le Sprint 13, mais l'activation n'a pas été faite.
 
 **Tout nouveau script en ligne doit porter le jeton**, sans quoi il sera bloqué :
 
@@ -259,7 +261,7 @@ k8s/
 └── overlays/production/     # VPS OVH sous k3s
 ```
 
-La **base** décrit ce qui ne dépend pas de l'environnement : namespace, configuration non sensible, PostgreSQL, Deployment Django, Job de migration, Ingress. Elle n'est pas destinée à être appliquée telle quelle — l'image n'y porte pas d'étiquette et le domaine y est un substitut.
+La **base** décrit ce qui ne dépend pas de l'environnement : namespace, configuration non sensible, PostgreSQL, Deployment Django, Job de migration, Ingress, sauvegarde quotidienne de PostgreSQL. Elle n'est pas destinée à être appliquée telle quelle — l'image n'y porte pas d'étiquette et le domaine y est un substitut.
 
 Chaque **surcouche** référence la base et n'apporte que les écarts :
 
@@ -269,6 +271,7 @@ Chaque **surcouche** référence la base et n'apporte que les écarts :
 | Domaine | `dilane-shop.local` | `dilane-shop.store` |
 | Certificat | `Issuer` auto-signé | `ClusterIssuer` Let's Encrypt |
 | Secret | `k8s/overlays/local/secrets.sops.yaml` | `k8s/overlays/production/secrets.sops.yaml` |
+| Supervision | aucune | Prometheus et Grafana, namespace `observabilite` ([docs/observabilite.md](docs/observabilite.md)) |
 
 Pour voir ce qu'une surcouche produit, sans rien appliquer :
 
@@ -434,7 +437,7 @@ kind delete cluster --name dilane-shop                # supprimer le cluster
 
 ## Déploiement en production (VPS OVH, k3s)
 
-La surcouche [k8s/overlays/production/](k8s/overlays/production/) applique la même base sur un VPS OVH sous k3s. Elle n'a pas encore été exercée sur un cluster réel.
+La surcouche [k8s/overlays/production/](k8s/overlays/production/) applique la même base sur un VPS OVH sous k3s. Elle est en service depuis le Sprint 13 : le site est en ligne sur `https://dilane-shop.store`. La procédure complète, du serveur nu au site en HTTPS, est dans [docs/deploiement-production.md](docs/deploiement-production.md) ; la supervision, dans [docs/observabilite.md](docs/observabilite.md).
 
 ### Prérequis
 
@@ -475,7 +478,7 @@ Si le paquet GHCR est privé, le cluster ne pourra pas tirer l'image sans un `im
 
 [k8s/overlays/production/tls.yaml](k8s/overlays/production/tls.yaml) déclare deux `ClusterIssuer` Let's Encrypt, l'environnement de test et celui de production, ainsi que le `Certificate` du domaine.
 
-Le `Certificate` pointe volontairement sur **l'environnement de test** : celui de production limite fortement le nombre de tentatives échouées par domaine et par semaine, et son certificat serait refusé par les navigateurs le temps de la mise au point. Une fois une émission réussie constatée, basculez :
+Le `Certificate` pointe sur **l'environnement de production** depuis `6b65ace`. Il pointait d'abord sur celui de test : l'environnement de production limite fortement le nombre de tentatives échouées par domaine et par semaine. Pour refaire cette mise au point sur un nouveau serveur, partir de l'environnement de test, puis, une fois une émission réussie constatée, basculer :
 
 1. remplacer `letsencrypt-test` par `letsencrypt-production` dans l'`issuerRef` du `Certificate` ;
 2. supprimer le Secret pour forcer une nouvelle demande, puis réappliquer.
@@ -607,6 +610,7 @@ Refaire l'étape 1 sur chaque copie de sauvegarde à intervalle régulier : une 
 - `/admin/` administration Django
 - `/gestion/` raccourci vers l’administration
 - `/healthz/` état de l’application et de la base, pour les sondes Kubernetes et le test de fumée de la CI
+- `/metrics` métriques Prometheus, lues par Prometheus à l’intérieur du cluster ; répond 404 depuis Internet
 
 Les pages de confirmation et de retour de paiement exigent une connexion et n’affichent que les commandes de l’utilisateur connecté : la commande d’un autre client répond 404.
 
@@ -633,7 +637,7 @@ Les pages de confirmation et de retour de paiement exigent une connexion et n’
 │   ├── adr/                    # Décisions d'architecture
 │   └── sprints/                # Rétrospectives de sprint
 ├── infra/terraform/            # Archive : infrastructure AWS, plus active
-├── scripts/                    # Archive : sauvegarde et restauration PostgreSQL
+├── scripts/                    # Archive de sauvegarde et restauration PostgreSQL (hors service)
 │   └── k6/                     # Test de charge du catalogue (docs/observabilite.md)
 └── .github/
     ├── dependabot.yml          # Mises à jour hebdomadaires : pip, image Docker, GitHub Actions
@@ -653,6 +657,9 @@ Les pages de confirmation et de retour de paiement exigent une connexion et n’
 - [docs/sprints/sprint-09-docker.md](docs/sprints/sprint-09-docker.md) — rétrospective du sprint de conteneurisation, décisions techniques et points reportés.
 - [docs/sprints/sprint-10-kubernetes.md](docs/sprints/sprint-10-kubernetes.md) — rétrospective du sprint Kubernetes, diagnostic du placement du contrôleur Ingress et points reportés.
 - [docs/sprints/sprint-11-tests.md](docs/sprints/sprint-11-tests.md) — rétrospective du sprint de tests : webhook Stripe, TVA, authentification, couverture en cliquet.
+- [docs/sprints/sprint-12-devsecops.md](docs/sprints/sprint-12-devsecops.md) — rétrospective du sprint DevSecOps : scan des dépendances, analyse statique, scan de l'image, en-têtes HTTP, secrets chiffrés avec SOPS.
+- [docs/sprints/sprint-13-deploiement.md](docs/sprints/sprint-13-deploiement.md) — rétrospective de la mise en production sur `dilane-shop.store`.
+- [docs/sprints/sprint-14-observabilite.md](docs/sprints/sprint-14-observabilite.md) — rétrospective du sprint d'observabilité : métriques, Prometheus et Grafana, alertes par courriel, tests de charge.
 - [.github/workflows/README.md](.github/workflows/README.md) — étapes du workflow CI, dans l’ordre.
 - [docs/definition-of-done.md](docs/definition-of-done.md) — critères qu'une tâche doit remplir pour être considérée comme terminée, chacun issu d'un défaut réel du projet.
 - [docs/deploiement-production.md](docs/deploiement-production.md) — procédure reproductible du déploiement sur VPS, du serveur nu au site en HTTPS.
@@ -716,7 +723,7 @@ Deux scripts existent dans le dépôt:
 
 **Leurs chemins sont obsolètes et ces scripts n’ont jamais fonctionné.** Tous deux attendent le projet dans `/home/ubuntu/ecommerce` (`backup_postgres.sh:4`, `restore_postgres.sh:10`), alors que `bootstrap.sh` l’installait dans `/home/ubuntu/e-commerce`. Le répertoire attendu n’a donc jamais existé sur le serveur : les scripts sortaient sur `Missing env file` avant d’atteindre `pg_dump`. La tâche cron proposée dans [docs/ops-backup.md](docs/ops-backup.md) ne surcharge pas `PROJECT_DIR` et échouait silencieusement.
 
-Il n’existe aujourd’hui aucune procédure de sauvegarde active. Les données de la pile Docker résident dans le volume nommé `postgres_data`. Ce point correspond à la dette 2.5 de [docs/AUDIT.md](docs/AUDIT.md), suivie par l’issue #83.
+Ces scripts ne sont plus utilisés. En production, PostgreSQL est sauvegardé chaque nuit par le CronJob `k8s/base/09-backup-cronjob.yaml`, sur le disque du nœud ; sortir les sauvegardes du serveur reste à faire. Pour la pile Docker, dont les données résident dans le volume nommé `postgres_data`, aucune sauvegarde n’existe. Ce point correspond à la dette 2.5 de [docs/AUDIT.md](docs/AUDIT.md), suivie par l’issue #83.
 
 ## Auteur
 
