@@ -15,3 +15,15 @@ data:
   # Sans cette variable, toute soumission de formulaire est rejetee
   # des lors que le site est servi en HTTPS derriere un Ingress.
   DJANGO_CSRF_TRUSTED_ORIGINS: "https://dilane-shop.store"
+  # --- Durcissement HTTPS des cookies (issue #105) ---
+  # Production uniquement : absent de l'overlay local (site en HTTP sous kind).
+  # Django sait que la requete est chiffree via SECURE_PROXY_SSL_HEADER
+  # (X-Forwarded-Proto pose par l'Ingress), donc pose bien le flag Secure.
+  #
+  # HSTS n'est PAS defini ici : l'Ingress l'envoie deja
+  # (Strict-Transport-Security: max-age=31536000; includeSubDomains).
+  # SECURE_SSL_REDIRECT reste a False : la redirection HTTP->HTTPS est faite
+  # par l'Ingress pour le trafic externe ; l'activer dans Django casserait le
+  # scrape Prometheus interne (/metrics en HTTP direct, sans X-Forwarded-Proto).
+  DJANGO_SESSION_COOKIE_SECURE: "True"
+  DJANGO_CSRF_COOKIE_SECURE: "True"
