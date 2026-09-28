@@ -15,6 +15,8 @@ Chaque bloc de commandes est marqué **PORTABLE** ou **SERVEUR** selon la machin
 | Certificats | cert-manager v1.16.2, Let's Encrypt |
 | Image | `ghcr.io/wankamdypuedilane/dilane-shop`, paquet public, déployée par empreinte de commit |
 | Domaine | `dilane-shop.store`, chez Amen |
+| Sauvegarde | CronJob `sauvegarde-postgres`, `pg_dump` quotidien à 03h00, 7 sauvegardes, sur le disque du VPS |
+| Supervision | Prometheus et Grafana, namespace `observabilite`, alertes par courriel — voir [observabilite.md](observabilite.md) |
 
 ### Variables utilisées dans ce document
 
@@ -542,9 +544,9 @@ kubectl get certificaterequests -n dilane-shop
 
 Let's Encrypt envoie par ailleurs un avertissement à l'adresse déclarée dans les `ClusterIssuer`.
 
-### Les données ne sont pas sauvegardées
+### Les sauvegardes restent sur le VPS
 
-PostgreSQL écrit dans un volume fourni par la classe de stockage par défaut de k3s, `local-path`, c'est-à-dire **sur le disque du VPS**. La perte du VPS emporte la base : commandes, comptes clients, catalogue modifié. Aucune sauvegarde n'est en place, la fixture ne restaure que le catalogue de démonstration. C'est la dette 2.5 de l'audit, suivie par l'issue #83.
+PostgreSQL écrit dans un volume fourni par la classe de stockage par défaut de k3s, `local-path`, c'est-à-dire **sur le disque du VPS**. Depuis le 27/09/2026 (`0fba9d2`), un CronJob sauvegarde la base chaque nuit (`k8s/base/09-backup-cronjob.yaml`) : `pg_dump` à 03h00, heure de Paris, 7 sauvegardes conservées. Mais ces sauvegardes sont écrites, elles aussi, par `local-path` sur le disque du VPS : elles protègent d'une erreur logique, pas de la perte de la machine, qui emporterait la base et ses sauvegardes. Un échec de sauvegarde ne déclenche aucune alerte. C'est la dette 2.5 de l'audit, suivie par l'issue #83.
 
 ### Changer `DB_PASSWORD` ne suffit pas
 
@@ -595,7 +597,7 @@ Revenir en arrière consiste à remettre l'empreinte précédente et à rejouer 
 | **Durcissement SSH** | Deux fichiers édités à la main, dont un fichier de cloud-init à corriger | `cloud-init` à la création du VPS, ou Ansible |
 | **Déploiement** | `git pull` puis `apply -k` à la main sur le serveur | Un workflow de déploiement, issue #43 — qui suppose de décider où vit la clé du cluster |
 | **Provisionnement du VPS** | Commande manuelle dans l'espace client OVH | Terraform, fournisseur OVH |
-| **Sauvegarde de la base** | Aucune | Issue #83 |
+| **Sauvegarde de la base** | CronJob quotidien, sauvegardes sur le disque du VPS | Les sortir du serveur, alerter en cas d'échec : issue #83 |
 | **Pare-feu** | Non configuré dans cette procédure | À décider : voir ci-dessous |
 
 ---

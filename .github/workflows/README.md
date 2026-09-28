@@ -22,12 +22,19 @@ request (dont celles de Dependabot) et à la demande. Il ne déploie rien.
    --fail-level ERROR` dans l'image de production.
 8. **Test de fumée** : démarrage du vrai conteneur de production, attente de
    `/healthz/`, échec si les journaux de démarrage contiennent une erreur.
+9. **Publication de l'image** sur `ghcr.io/wankamdypuedilane/dilane-shop`,
+   seulement sur un push sur `main`, jamais depuis une pull request. Deux
+   étiquettes : `latest` et l'identifiant du commit, auquel la surcouche de
+   production fige l'image (issue #43).
 
 La pile est arrêtée et ses volumes supprimés à la fin, même en cas d'échec.
 
-Aucun secret n'est nécessaire : le fichier `.env` est reconstruit à chaque
+Aucun secret n'est à configurer : le fichier `.env` est reconstruit à chaque
 exécution depuis `.env.example`, avec une clé et un mot de passe aléatoires.
+La publication s'authentifie avec le `GITHUB_TOKEN` fourni automatiquement
+par GitHub (permission `packages: write`).
 
-Le déploiement vers Kubernetes fera l'objet d'un workflow distinct
-(issue #43). L'ancien déploiement SSH vers EC2, désactivé depuis le
-Sprint 9, a été retiré ; il reste consultable dans l'historique Git.
+Le workflow publie l'image mais ne la déploie pas : le déploiement sur le
+cluster de production reste manuel (voir `docs/deploiement-production.md`).
+L'ancien déploiement SSH vers EC2, désactivé depuis le Sprint 9, a été
+retiré ; il reste consultable dans l'historique Git.
