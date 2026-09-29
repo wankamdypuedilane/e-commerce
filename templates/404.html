@@ -1,0 +1,18 @@
+{% extends "shop/base.html" %}
+{% comment %}
+  Page 404 personnalisee (issue #55).
+
+  Django rend la 404 AVEC un RequestContext : l'heritage de base.html, le
+  jeton de securite sur ses scripts et les liens de routage fonctionnent
+  donc normalement. La page reste ainsi coherente avec le reste du site.
+{% endcomment %}
+{% block content %}
+<div class="container text-center py-5">
+  <p class="display-1 fw-bold" style="color:#2c3e50;">404</p>
+  <h1 class="h3 mb-3">Page introuvable</h1>
+  <p class="text-muted mb-4">
+    La page que vous cherchez n'existe pas ou a ete deplacee.
+  </p>
+  <a href="{% url 'home' %}" class="btn btn-primary">Retour a l'accueil</a>
+</div>
+{% endblock content %}
