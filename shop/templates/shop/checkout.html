@@ -28,6 +28,7 @@
               class="form-control"
               id="nom"
               name="nom"
+              autocomplete="name"
               placeholder="Junior"
               required
             />
@@ -40,6 +41,7 @@
               class="form-control"
               id="email"
               name="email"
+              autocomplete="email"
               placeholder="junior@gmail.com"
               required
             />
@@ -52,6 +54,7 @@
               class="form-control"
               id="address"
               name="address"
+              autocomplete="address-line1"
               placeholder="1234 Main St"
               required
             />
@@ -66,6 +69,7 @@
               class="form-control"
               id="address2"
               name="address2"
+              autocomplete="address-line2"
               placeholder="Appartement, studio, ou étage"
             />
           </div>
@@ -77,6 +81,7 @@
               class="form-control"
               id="ville"
               name="ville"
+              autocomplete="address-level2"
               placeholder="Brest"
               required
             />
@@ -84,7 +89,7 @@
 
           <div class="col-md-4">
             <label for="pays" class="form-label fw-bold">Pays</label>
-            <select id="pays" name="pays" class="form-select">
+            <select id="pays" name="pays" autocomplete="country-name" class="form-select">
               <option selected>France</option>
 
               <option>Cameroun</option>
@@ -118,6 +123,7 @@
               class="form-control"
               id="zipcode"
               name="zipcode"
+              autocomplete="postal-code"
               placeholder="29200"
               required
             />
