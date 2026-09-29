@@ -35,4 +35,3 @@ docker-compose.yml
 .env.example
 .dockerignore
 .sops.yaml
-.coveragerc
