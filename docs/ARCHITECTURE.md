@@ -270,7 +270,7 @@ Ajoutés à l'issue #38. Tous sont posés par des intergiciels, donc sur **toute
 | `X-Content-Type-Options` | `nosniff` | `SecurityMiddleware`, valeur par défaut |
 | `Referrer-Policy` | `same-origin` | `SecurityMiddleware`, valeur par défaut |
 | `Cross-Origin-Opener-Policy` | `same-origin` | `SecurityMiddleware`, valeur par défaut |
-| `Strict-Transport-Security` | **non envoyé** | `SECURE_HSTS_SECONDS` vaut 0 par défaut (`settings.py:49`), et aucune surcouche ne fixe `DJANGO_SECURE_HSTS_SECONDS`. Le report à l'issue #42 attendait un certificat reconnu : c'est le cas en production depuis le Sprint 13, mais l'activation n'a pas été faite. HSTS rendrait le site inaccessible en cas d'erreur de certificat, sans possibilité de passer outre dans le navigateur. |
+| `Strict-Transport-Security` | **envoyé en production par l'Ingress** (`max-age=31536000; includeSubDomains`) | Django ne le pose pas lui-même : `SECURE_HSTS_SECONDS` vaut 0 par défaut (`settings.py:49`) et aucune surcouche ne fixe `DJANGO_SECURE_HSTS_SECONDS`, pour éviter un en-tête émis en double avec celui de l'Ingress. |
 
 **Politique CSP**, appliquée par `SECURE_CSP` et non seulement observée : il n'y a pas d'en-tête `Content-Security-Policy-Report-Only`. Selon le commentaire de `settings.py`, elle a été appliquée après une phase d'observation en mode Report-Only. Aucune directive `report-uri` ou `report-to` n'est déclarée : une violation n'est visible que dans la console du navigateur.
 

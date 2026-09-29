@@ -227,7 +227,7 @@ Chaque réponse porte une politique de sécurité du contenu (CSP), native dans 
 - **Scripts** : seuls s'exécutent les fichiers du site, de `cdn.jsdelivr.net` et de `code.jquery.com`, et les scripts en ligne qui portent le jeton de la page. Un script injecté sans ce jeton est bloqué par le navigateur.
 - **Styles** : exception assumée, `'unsafe-inline'` est autorisé. Les jetons ne s'appliquent pas aux attributs `style=` écrits dans le HTML, et une injection de style est bien moins grave qu'une injection de script.
 - **Formulaires** : ils ne peuvent être envoyés qu'au site et à `checkout.stripe.com`, pour la redirection vers le paiement. Cette redirection n'a pas encore été vérifiée avec de vraies clés Stripe.
-- **Strict-Transport-Security** n'est pas envoyé : `SECURE_HSTS_SECONDS` vaut 0 et aucune surcouche ne le fixe. Il était reporté à l'issue #42, dans l'attente d'un certificat reconnu ; la production en a un depuis le Sprint 13, mais l'activation n'a pas été faite.
+- **Strict-Transport-Security** est envoyé en production par l'Ingress (`max-age=31536000; includeSubDomains`). Django ne le pose pas lui-même : `SECURE_HSTS_SECONDS` reste à 0 et aucune surcouche ne le fixe, pour éviter que l'en-tête soit émis en double.
 
 **Tout nouveau script en ligne doit porter le jeton**, sans quoi il sera bloqué :
 
