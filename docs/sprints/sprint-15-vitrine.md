@@ -85,17 +85,36 @@ Le dépôt et le tableau racontent désormais la même chose.
 
 ## 4. Ce qui a surpris
 
-### Une fermeture en masse, une deuxième fois
+### Trois issues fermées sans avoir été faites
 
-Pendant le rangement du tableau, le 29/09 entre 05h26 et 05h32, six issues ont été fermées comme terminées : #86, #88, #89, #90, #91 et #93. Pour #90 et #91, la fermeture a précédé la PR qui les livrait ; pour #93, elle a précédé une livraison qui a ensuite été annulée.
+Pendant le rangement du tableau, le 29/09, les cartes ont été déplacées en lot vers la colonne *Done*. Chaque déplacement a fermé l'issue correspondante, avec le motif « completed » :
 
-Le même geste avait déjà eu lieu le 25/09 : #88, #90 et #93 portent chacune un commentaire « Rouverte : fermée par erreur lors du rangement du tableau, le travail n'a pas été fait. » Au moment de cette rétrospective, rien dans le dépôt ne montre de travail sur #86 (versions des outils de sécurité suivies par Dependabot), #88 (collecte des violations CSP) ni #89 (attributs `style=`) : il n'existe pas de `requirements-ci.txt`, pas de directive `report-to`, et des attributs `style=` restent dans les gabarits.
+- à 05h26 (03h26 UTC), **#86, #88 et #89**, alors qu'aucun travail n'avait été fait ;
+- à 05h32, #90, #91 et #93, avant les PR qui allaient les livrer ou, pour #93, l'annuler.
 
-Déplacer une carte dans la colonne *Done* d'un tableau Projects ne demande pas de confirmation, et le motif de fermeture qui en résulte, « completed », ne dit rien de ce qui a été fait.
+Pour les trois premières, le dépôt ne laissait aucun doute :
+
+| Issue | Élément | Ce que montre le dépôt |
+|---|---|---|
+| #86 | Versions des outils de sécurité suivies par Dependabot | Aucun `requirements-ci.txt` |
+| #88 | Collecte des violations de la politique de sécurité du contenu | Aucune directive de rapport dans la CSP |
+| #89 | Retrait des attributs `style=` | Toujours présents dans 3 gabarits de `shop/templates` |
+
+Les trois issues ont été **rouvertes** le 29/09 au soir et remises en *To Do* dans leurs sprints respectifs : #86 au Sprint 18, #89 au Sprint 19, #88 au Sprint 20.
+
+Ce n'était pas la première fois. Le 25/09, un rangement du même genre avait déjà fermé à tort #88, #90 et #93. Chacune porte encore le commentaire de sa réouverture : « Rouverte : fermée par erreur lors du rangement du tableau, le travail n'a pas été fait. »
+
+Déplacer une carte dans *Done* ne demande aucune confirmation. Le motif « completed » qui en résulte ne dit pas si le travail a été fait, et une issue fermée disparaît des listes où l'on cherche le travail restant. Sans la vérification faite après cette rétrospective, trois chantiers de sécurité et de supervision seraient sortis du backlog sans bruit.
 
 ### Le `.coveragerc` n'était pas un fichier de développement inutile
 
 Voir la section suivante.
+
+### Les deux leçons de process
+
+**Une issue ne se ferme que par la fusion de sa PR.** Jamais par un déplacement de carte, jamais par une fermeture en lot. La PR porte `Closes #n` : c'est sa fusion qui ferme l'issue. Le tableau suit l'état des issues ; il ne le décide pas. Une issue abandonnée se ferme à la main, une par une, avec le motif « not planned » et un commentaire qui dit pourquoi.
+
+**Une PR ne se fusionne qu'une fois sa CI verte.** La PR #114 a été fusionnée avant la fin de sa CI : `main` est passé au rouge et il a fallu un revert (section 5). Même pour une ligne dans un `.dockerignore`, on attend le vert.
 
 ---
 
@@ -135,7 +154,7 @@ La dépendance a été révélée par l'échec de la CI, comprise en lisant ses 
 
 La PR #114 a été fusionnée 58 secondes après son ouverture, avant la fin de sa propre CI, qui s'est terminée en échec 27 secondes plus tard. Attendre le résultat de la CI de la PR aurait évité le commit rouge sur `main`.
 
-L'issue est close comme non pertinente. Le gain visé, un fichier texte de moins dans l'image, ne justifie pas de séparer la configuration de coverage entre les deux étapes du Dockerfile.
+L'issue reste fermée : l'exclusion est annulée, non reportée. Son motif de fermeture sur GitHub est resté « completed », hérité de la fermeture en lot de 05h32, et non « not planned ». L'écart est cosmétique et n'a pas été corrigé : c'est une dette mineure de suivi. Le gain visé, un fichier texte de moins dans l'image, ne justifie pas de séparer la configuration de coverage entre les deux étapes du Dockerfile.
 
 ---
 
@@ -160,6 +179,7 @@ Ouverte pendant #90 (section 3). Elle demande l'ajout de `api-adresse.data.gouv.
 | #39 | Gestion des secrets hors base64 | Sprint 12 |
 | #67, #68, #69 | Webhook sous appels simultanés, survente masquée, taux de TVA invalide | Sprint 11 |
 | #94, #95 | Test d'intrusion, détection dans les journaux | Sprint 12 |
+| #86, #88, #89 | Outils de sécurité suivis par Dependabot, violations CSP, attributs `style=` ; rouvertes le 29/09 (section 4) | Sprint 12 |
 
 ---
 
@@ -187,8 +207,9 @@ Sprint 15 clos : 4 issues livrées, 1 annulée, 1 reportée.
 
 - **Déployer** : repointer `newTag` de la surcouche de production sur un commit du Sprint 15, pour que les pages d'erreur, l'icône et la saisie automatique soient visibles sur `dilane-shop.store`. C'était l'objectif du sprint.
 - **Vérifier la 500 en production** : les tests la rendent sans contexte, mais son affichage derrière ingress-nginx, sur une vraie erreur, n'a pas été observé.
-- **Requalifier #93** : son motif de fermeture sur GitHub est « completed », alors qu'elle a été annulée ; « not planned » dirait ce qui s'est passé.
-- **Rouvrir #86, #88 et #89** si leur fermeture du 29/09 est, comme celle du 25/09, une erreur de rangement du tableau (section 4).
+- **Ne fermer une issue que par la fusion de sa PR**, jamais par un déplacement de carte ni en lot (section 4).
 - **Attendre la CI de la PR avant de fusionner**, même pour une modification d'une ligne (section 5).
+- **Dette mineure** : le motif de fermeture de #93 est « completed » au lieu de « not planned ».
 - **Sprint 16 — Modularisation & API** : #49, #50, puis #56.
-- **Issues ouvertes** — #98, #113, #83, #72, #46, #39, #49, #67, #68, #69, #94, #95.
+- **#86 au Sprint 18, #89 au Sprint 19, #88 au Sprint 20**, rouvertes le 29/09.
+- **Issues ouvertes** — #98, #113, #83, #72, #46, #39, #49, #67, #68, #69, #86, #88, #89, #94, #95.
