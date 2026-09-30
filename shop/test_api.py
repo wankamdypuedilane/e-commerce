@@ -5,7 +5,10 @@ Vérifié ici :
 - il est en lecture seule : aucune écriture possible, même authentifié ;
 - un jeton s'obtient avec des identifiants valides, et authentifie les
   requêtes suivantes ;
-- seule la version v1 existe.
+- seule la version v1 existe ;
+- les commandes ne sont visibles que de leur propriétaire, avec la même
+  règle que le site (test_acces_commandes) : la commande d'autrui répond
+  404 et non 403, pour ne pas confirmer qu'elle existe.
 """
 from decimal import Decimal
 
@@ -15,7 +18,7 @@ from django.urls import reverse
 from rest_framework.authtoken.models import Token
 from rest_framework.test import APIClient
 
-from .models import Category, Product
+from .models import Category, Commande, OrderItem, Product
 
 User = get_user_model()
 MOT_DE_PASSE = "Mot-de-passe-de-test-42"
@@ -85,10 +88,10 @@ class CatalogueApiTest(TestCase):
         ])
 
     def test_racine_de_l_api(self):
-        """La racine /api/v1/ liste les routes du catalogue."""
+        """La racine /api/v1/ liste les routes de l'API."""
         reponse = self.client.get("/api/v1/")
         self.assertEqual(reponse.status_code, 200)
-        self.assertEqual(set(reponse.json()), {"products", "categories"})
+        self.assertEqual(set(reponse.json()), {"products", "categories", "orders"})
 
     def test_version_inconnue_introuvable(self):
         """Seule v1 existe : /api/v2/ ne correspond à aucune route."""
@@ -165,3 +168,149 @@ class JetonApiTest(TestCase):
         self.client.credentials(HTTP_AUTHORIZATION="Token jeton-inexistant")
         reponse = self.client.get(url("product-list"))
         self.assertEqual(reponse.status_code, 401)
+
+
+class CommandesApiTest(TestCase):
+    """Accès aux commandes par l'API (issue #56), calqué sur test_acces_commandes."""
+
+    def setUp(self):
+        self.client = APIClient()
+        self.proprietaire = User.objects.create_user(username="proprietaire", password=MOT_DE_PASSE)
+        self.autre = User.objects.create_user(username="autre", password=MOT_DE_PASSE)
+        categorie = Category.objects.create(name="Audio")
+        self.produit = Product.objects.create(
+            title="Casque", price=Decimal("100.00"), description="Test",
+            category=categorie, stock=10,
+        )
+        self.commande = self.creer_commande(self.proprietaire)
+        self.commande_d_autrui = self.creer_commande(self.autre)
+
+    def creer_commande(self, utilisateur):
+        commande = Commande.objects.create(
+            subtotal_ht=Decimal("100.00"), tax_amount=Decimal("20.00"),
+            total=Decimal("120.00"), nom="Client A", email="a@example.com",
+            address="1 rue du Test", ville="Brest", pays="France", zipcode="29200",
+            stripe_checkout_session_id=f"cs_test_{Commande.objects.count()}",
+            payment_reference="pi_test_secret",
+            user=utilisateur,
+        )
+        OrderItem.objects.create(
+            commande=commande, product=self.produit, price=Decimal("100.00"), quantity=1,
+        )
+        return commande
+
+    def authentifier(self, utilisateur):
+        """Authentifie les requêtes suivantes par jeton, comme un client de l'API."""
+        jeton = Token.objects.create(user=utilisateur)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {jeton.key}")
+
+    # --- Consultation ---------------------------------------------------------
+
+    def test_le_proprietaire_voit_ses_commandes(self):
+        """GET /api/v1/orders/ renvoie uniquement les commandes de l'utilisateur."""
+        self.authentifier(self.proprietaire)
+        reponse = self.client.get("/api/v1/orders/")
+        self.assertEqual(reponse.status_code, 200)
+        self.assertEqual([c["id"] for c in reponse.json()], [self.commande.id])
+
+    def test_commandes_triees_de_la_plus_recente_a_la_plus_ancienne(self):
+        """La liste commence par la dernière commande passée."""
+        recente = self.creer_commande(self.proprietaire)
+        self.authentifier(self.proprietaire)
+        reponse = self.client.get(url("order-list"))
+        self.assertEqual([c["id"] for c in reponse.json()], [recente.id, self.commande.id])
+
+    def test_les_commandes_d_autrui_absentes_de_la_liste(self):
+        """La commande d'un autre utilisateur n'apparaît pas dans la liste."""
+        self.authentifier(self.autre)
+        ids = [c["id"] for c in self.client.get(url("order-list")).json()]
+        self.assertNotIn(self.commande.id, ids)
+        self.assertEqual(ids, [self.commande_d_autrui.id])
+
+    def test_le_proprietaire_consulte_sa_commande(self):
+        """Le détail expose le suivi de la commande et ses lignes."""
+        self.authentifier(self.proprietaire)
+        reponse = self.client.get(url("order-detail", pk=self.commande.id))
+        self.assertEqual(reponse.status_code, 200)
+        donnees = reponse.json()
+        self.assertEqual(donnees["id"], self.commande.id)
+        self.assertEqual(donnees["total"], "120.00")
+        self.assertEqual(donnees["status"], "pending")
+        self.assertEqual(donnees["payment_status"], "pending")
+        self.assertEqual(donnees["items"], [
+            {"product": self.produit.id, "title": "Casque", "price": "100.00", "quantity": 1},
+        ])
+
+    def test_aucune_donnee_personnelle_ni_interne_exposee(self):
+        """Ni coordonnées, ni identifiants Stripe, ni indicateurs internes."""
+        self.authentifier(self.proprietaire)
+        donnees = self.client.get(url("order-detail", pk=self.commande.id)).json()
+        self.assertEqual(
+            set(donnees),
+            {"id", "date", "status", "payment_status", "subtotal_ht", "tax_amount", "total", "items"},
+        )
+        self.assertNotIn("pi_test_secret", str(donnees))
+        self.assertNotIn("a@example.com", str(donnees))
+
+    def test_produit_supprime_reste_lisible(self):
+        """Une ligne dont le produit a été supprimé garde un libellé."""
+        self.produit.delete()
+        self.authentifier(self.proprietaire)
+        items = self.client.get(url("order-detail", pk=self.commande.id)).json()["items"]
+        self.assertEqual(items, [
+            {"product": None, "title": "Produit supprimé", "price": "100.00", "quantity": 1},
+        ])
+
+    def test_commande_d_autrui_introuvable(self):
+        """La commande d'autrui répond 404, et non 403 qui confirmerait son existence."""
+        self.authentifier(self.autre)
+        reponse = self.client.get(url("order-detail", pk=self.commande.id))
+        self.assertEqual(reponse.status_code, 404)
+
+    def test_commande_d_autrui_et_commande_inexistante_indiscernables(self):
+        """Même réponse pour la commande d'autrui et pour un identifiant inexistant."""
+        self.authentifier(self.autre)
+        autrui = self.client.get(url("order-detail", pk=self.commande.id))
+        inexistante = self.client.get(url("order-detail", pk=999999))
+        self.assertEqual(autrui.status_code, inexistante.status_code)
+        self.assertEqual(autrui.json(), inexistante.json())
+
+    def test_commande_sans_utilisateur_inaccessible(self):
+        """Une commande orpheline (user=None) n'est visible de personne."""
+        orpheline = self.creer_commande(None)
+        self.authentifier(self.proprietaire)
+        self.assertEqual(self.client.get(url("order-detail", pk=orpheline.id)).status_code, 404)
+        ids = [c["id"] for c in self.client.get(url("order-list")).json()]
+        self.assertNotIn(orpheline.id, ids)
+
+    def test_session_du_site_donne_le_meme_acces(self):
+        """Connecté au site (session), l'utilisateur ne voit aussi que ses commandes."""
+        self.client.force_login(self.autre)
+        self.assertEqual(self.client.get(url("order-detail", pk=self.commande.id)).status_code, 404)
+        ids = [c["id"] for c in self.client.get(url("order-list")).json()]
+        self.assertEqual(ids, [self.commande_d_autrui.id])
+
+    # --- Authentification -----------------------------------------------------
+
+    def test_visiteur_anonyme_refuse(self):
+        """Sans authentification, liste et détail répondent 401, même en lecture."""
+        self.assertEqual(self.client.get("/api/v1/orders/").status_code, 401)
+        self.assertEqual(self.client.get(url("order-detail", pk=self.commande.id)).status_code, 401)
+
+    # --- Lecture seule ------------------------------------------------------
+
+    def test_ecriture_refusee_meme_sur_sa_propre_commande(self):
+        """POST, PUT, PATCH et DELETE répondent 405 : les commandes naissent au paiement."""
+        self.authentifier(self.proprietaire)
+        liste = url("order-list")
+        detail = url("order-detail", pk=self.commande.id)
+
+        self.assertEqual(self.client.post(liste, {"total": "1.00"}, format="json").status_code, 405)
+        self.assertEqual(self.client.put(detail, {"total": "1.00"}, format="json").status_code, 405)
+        self.assertEqual(self.client.patch(detail, {"status": "delivered"}, format="json").status_code, 405)
+        self.assertEqual(self.client.delete(detail).status_code, 405)
+
+        self.commande.refresh_from_db()
+        self.assertEqual(self.commande.total, Decimal("120.00"))
+        self.assertEqual(self.commande.status, "pending")
+        self.assertEqual(Commande.objects.count(), 2)
