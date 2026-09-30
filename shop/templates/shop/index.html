@@ -126,51 +126,8 @@
 
 {% endblock content %} {% block js %}
 <script nonce="{{ csp_nonce }}" type="text/javascript">
-  window.cartPopoverManaged = true;
-  var cartStorageKey = window.cartStorageKey || "panier_guest";
-
-  // 1. Initialisation du panier
-  if (localStorage.getItem(cartStorageKey) == null) {
-    var panier = {};
-  } else {
-    panier = JSON.parse(localStorage.getItem(cartStorageKey));
-  }
-  var popoverBtn = document.getElementById("panier");
-
-  function getPopover() {
-    var instance = bootstrap.Popover.getInstance(popoverBtn);
-    if (!instance) {
-      // Trigger manuel: meilleur controle d'ouverture/fermeture du panier
-      instance = new bootstrap.Popover(popoverBtn, {
-        html: true,
-        trigger: "manual",
-        placement: "bottom",
-        container: "body",
-        sanitize: false,
-        content: function () {
-          return popoverBtn.getAttribute("data-bs-content") || "";
-        },
-      });
-    }
-    return instance;
-  }
-
-  function getTotalItems(panierObj) {
-    var totalItems = 0;
-    for (var id in panierObj) {
-      totalItems += panierObj[id][0];
-    }
-    return totalItems;
-  }
-
-  function getMaxStockForItem(itemId) {
-    var btn = document.getElementById(itemId);
-    if (!btn) return null;
-
-    var raw = btn.getAttribute("data-stock");
-    var stock = parseInt(raw || "", 10);
-    return Number.isFinite(stock) ? stock : null;
-  }
+  // Panier commun (static/shop/panier.js) : popover modifiable sur l'accueil
+  var panier = Panier.contenu;
 
   $(document).on("click", ".ted", function () {
     var item_id = this.id.toString();
@@ -195,160 +152,11 @@
       panier[item_id] = [quantity, name, price, maxStock];
     }
 
-    localStorage.setItem(cartStorageKey, JSON.stringify(panier));
-    AfficherList(panier);
+    Panier.enregistrer();
+    Panier.afficher();
   });
 
-  function AfficherList(panier) {
-    var panierString =
-      "<h5 style='color:#2c3e50; border-bottom:2px solid #2c3e50; padding-bottom:5px;'>🛒 Votre panier</h5>";
-    var itemCount = 0;
-    var index = 1;
-
-    if (Object.keys(panier).length === 0) {
-      panierString += "<p style='margin:8px 0;'>Votre panier est vide.</p>";
-    }
-
-    for (var x in panier) {
-      var quantity = panier[x][0];
-      var unitPrice = panier[x][2] / panier[x][0];
-      itemCount += panier[x][0];
-      panierString +=
-        "<div style='padding:6px 0; border-bottom:1px solid #eee;'>" +
-        "<div style='display:flex; justify-content:space-between; align-items:center; gap:8px;'><span>" +
-        index +
-        ". " +
-        panier[x][1] +
-        "</span><span class='badge bg-success rounded-pill'>x" +
-        quantity +
-        "</span></div>" +
-        "<div style='display:flex; justify-content:flex-end; gap:6px; margin-top:8px;'>" +
-        "<button type='button' class='btn btn-sm btn-outline-secondary cart-minus' data-id='" +
-        x +
-        "'>-</button>" +
-        "<button type='button' class='btn btn-sm btn-outline-success cart-plus' data-id='" +
-        x +
-        "'>+</button>" +
-        "<button type='button' class='btn btn-sm btn-outline-danger cart-remove' data-id='" +
-        x +
-        "'>Supprimer</button>" +
-        "</div></div>";
-
-      // Keep legacy entries (without max stock) usable.
-      if (panier[x].length < 4) {
-        var inferredMax = getMaxStockForItem(x);
-        if (inferredMax !== null) {
-          panier[x][3] = inferredMax;
-          panier[x][2] = unitPrice * panier[x][0];
-          localStorage.setItem(cartStorageKey, JSON.stringify(panier));
-        }
-      }
-      index += 1;
-    }
-
-    if (Object.keys(panier).length > 0) {
-      panierString +=
-        "<a href='/checkout' class='btn btn-primary mt-3 w-100'>Valider votre commande</a>";
-    }
-
-    var popover = getPopover();
-    popoverBtn.setAttribute("data-bs-content", panierString);
-
-    if (popover.tip && popover.tip.classList.contains("show")) {
-      popover.setContent({
-        ".popover-body": panierString,
-      });
-    }
-
-    document.getElementById("panier-count").innerHTML = itemCount;
-  }
-
-  $(document).on("click", "#panier", function (event) {
-    event.preventDefault();
-    event.stopPropagation();
-
-    // Met a jour le contenu avant d'ouvrir le popover
-    AfficherList(panier);
-
-    var popover = getPopover();
-    if (popover.tip && popover.tip.classList.contains("show")) {
-      popover.hide();
-    } else {
-      popover.show();
-    }
-  });
-
-  $(document).on("click", ".cart-plus", function (event) {
-    event.preventDefault();
-    event.stopPropagation();
-
-    var id = this.getAttribute("data-id");
-    if (!panier[id]) return;
-
-    var unitPrice = panier[id][2] / panier[id][0];
-    var maxStock = panier[id][3];
-    if (!Number.isFinite(maxStock)) {
-      maxStock = getMaxStockForItem(id);
-      if (maxStock !== null) {
-        panier[id][3] = maxStock;
-      }
-    }
-
-    if (Number.isFinite(maxStock) && panier[id][0] >= maxStock) {
-      alert("Stock maximum atteint pour ce produit.");
-      return;
-    }
-
-    panier[id][0] += 1;
-    panier[id][2] += unitPrice;
-    localStorage.setItem(cartStorageKey, JSON.stringify(panier));
-    AfficherList(panier);
-  });
-
-  $(document).on("click", ".cart-minus", function (event) {
-    event.preventDefault();
-    event.stopPropagation();
-
-    var id = this.getAttribute("data-id");
-    if (!panier[id]) return;
-
-    var unitPrice = panier[id][2] / panier[id][0];
-    panier[id][0] -= 1;
-
-    if (panier[id][0] <= 0) {
-      delete panier[id];
-    } else {
-      panier[id][2] -= unitPrice;
-    }
-
-    localStorage.setItem(cartStorageKey, JSON.stringify(panier));
-    AfficherList(panier);
-  });
-
-  $(document).on("click", ".cart-remove", function (event) {
-    event.preventDefault();
-    event.stopPropagation();
-
-    var id = this.getAttribute("data-id");
-    if (!panier[id]) return;
-
-    delete panier[id];
-    localStorage.setItem(cartStorageKey, JSON.stringify(panier));
-    AfficherList(panier);
-  });
-
-  $(document).on("click", function (event) {
-    if ($(event.target).closest("#panier, .popover").length) {
-      return;
-    }
-
-    var popover = bootstrap.Popover.getInstance(popoverBtn);
-    if (popover) {
-      popover.hide();
-    }
-  });
-
-  AfficherList(panier);
+  Panier.initialiserPopover({ modifiable: true });
 
   function escapeHtml(text) {
     return String(text)
@@ -470,8 +278,8 @@
     });
 
     if (changed) {
-      localStorage.setItem(cartStorageKey, JSON.stringify(panier));
-      AfficherList(panier);
+      Panier.enregistrer();
+      Panier.afficher();
     }
   }
 

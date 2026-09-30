@@ -175,6 +175,7 @@
     window.cartStorageKey =
       "{% if request.user.is_authenticated %}panier_user_{{ request.user.id }}{% else %}panier_guest{% endif %}";
   </script>
+  <script nonce="{{ csp_nonce }}" src="{% static 'shop/panier.js' %}"></script>
   {%block js%} {%endblock%}
   <script nonce="{{ csp_nonce }}" type="text/javascript">
     $(document).on("click", ".toggle-password", function () {
@@ -202,105 +203,7 @@
     });
   </script>
   <script nonce="{{ csp_nonce }}" type="text/javascript">
-    (function () {
-      if (window.cartPopoverManaged) {
-        return;
-      }
-
-      var popoverBtn = document.getElementById("panier");
-      if (!popoverBtn) {
-        return;
-      }
-
-      function getPanier() {
-        var storageKey = window.cartStorageKey || "panier_guest";
-        var stored = localStorage.getItem(storageKey);
-        return stored ? JSON.parse(stored) : {};
-      }
-
-      function getPopover() {
-        var instance = bootstrap.Popover.getInstance(popoverBtn);
-        if (!instance) {
-          instance = new bootstrap.Popover(popoverBtn, {
-            html: true,
-            trigger: "manual",
-            placement: "bottom",
-            container: "body",
-            sanitize: false,
-            content: function () {
-              return popoverBtn.getAttribute("data-bs-content") || "";
-            },
-          });
-        }
-        return instance;
-      }
-
-      function updatePanierUI() {
-        var panier = getPanier();
-        var panierString =
-          "<h5 style='color:#2c3e50; border-bottom:2px solid #2c3e50; padding-bottom:5px;'>🛒 Votre panier</h5>";
-        var itemCount = 0;
-        var index = 1;
-
-        if (Object.keys(panier).length === 0) {
-          panierString += "<p style='margin:8px 0;'>Votre panier est vide.</p>";
-        }
-
-        for (var id in panier) {
-          itemCount += panier[id][0];
-          panierString +=
-            "<div style='display:flex; justify-content:space-between; align-items:center; padding:6px 0; border-bottom:1px solid #eee;'><span>" +
-            index +
-            ". " +
-            panier[id][1] +
-            "</span><span class='badge bg-success rounded-pill'>x" +
-            panier[id][0] +
-            "</span></div>";
-          index += 1;
-        }
-
-        if (Object.keys(panier).length > 0) {
-          panierString +=
-            "<a href='/checkout' class='btn btn-primary mt-3 w-100'>Valider votre commande</a>";
-        }
-
-        popoverBtn.setAttribute("data-bs-content", panierString);
-        var popover = getPopover();
-        if (popover.tip && popover.tip.classList.contains("show")) {
-          popover.setContent({ ".popover-body": panierString });
-        }
-
-        var badge = document.getElementById("panier-count");
-        if (badge) {
-          badge.innerHTML = itemCount;
-        }
-      }
-
-      $(document).on("click", "#panier", function (event) {
-        event.preventDefault();
-        event.stopPropagation();
-
-        updatePanierUI();
-        var popover = getPopover();
-        if (popover.tip && popover.tip.classList.contains("show")) {
-          popover.hide();
-        } else {
-          popover.show();
-        }
-      });
-
-      $(document).on("click", function (event) {
-        if ($(event.target).closest("#panier, .popover").length) {
-          return;
-        }
-
-        var popover = bootstrap.Popover.getInstance(popoverBtn);
-        if (popover) {
-          popover.hide();
-        }
-      });
-
-      updatePanierUI();
-    })();
+    // Popover du panier en lecture seule, sauf si la page l'a déjà installé
+    Panier.initialiserPopover();
   </script>
 </html>
