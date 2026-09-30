@@ -8,15 +8,23 @@ Vérifié ici :
 - seule la version v1 existe ;
 - les commandes ne sont visibles que de leur propriétaire, avec la même
   règle que le site (test_acces_commandes) : la commande d'autrui répond
-  404 et non 403, pour ne pas confirmer qu'elle existe.
+  404 et non 403, pour ne pas confirmer qu'elle existe ;
+- la limitation de débit répond 429 au-delà du seuil ;
+- le schéma OpenAPI et Swagger UI sont servis, sans script inline que la
+  CSP bloquerait.
 """
+import re
 from decimal import Decimal
+from unittest.mock import patch
 
+from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.core.cache import cache
 from django.test import TestCase
 from django.urls import reverse
 from rest_framework.authtoken.models import Token
 from rest_framework.test import APIClient
+from rest_framework.throttling import SimpleRateThrottle
 
 from .models import Category, Commande, OrderItem, Product
 
@@ -29,9 +37,21 @@ def url(nom, **kwargs):
     return reverse(f"api:{nom}", kwargs={"version": "v1", **kwargs})
 
 
-class CatalogueApiTest(TestCase):
+class ApiTestCase(TestCase):
+    """Base des tests de l'API : compteurs de limitation de débit remis à zéro.
+
+    Les compteurs vivent dans le cache, partagé par toute la suite : sans
+    cette remise à zéro, les requêtes d'un test compteraient pour le suivant.
+    """
 
     def setUp(self):
+        cache.clear()
+
+
+class CatalogueApiTest(ApiTestCase):
+
+    def setUp(self):
+        super().setUp()
         self.client = APIClient()
         self.audio = Category.objects.create(name="Audio")
         self.maison = Category.objects.create(name="Maison")
@@ -129,9 +149,10 @@ class CatalogueApiTest(TestCase):
         self.assertEqual(Product.objects.count(), 2)
 
 
-class JetonApiTest(TestCase):
+class JetonApiTest(ApiTestCase):
 
     def setUp(self):
+        super().setUp()
         self.client = APIClient()
         self.utilisateur = User.objects.create_user(username="client", password=MOT_DE_PASSE)
 
@@ -170,10 +191,11 @@ class JetonApiTest(TestCase):
         self.assertEqual(reponse.status_code, 401)
 
 
-class CommandesApiTest(TestCase):
+class CommandesApiTest(ApiTestCase):
     """Accès aux commandes par l'API (issue #56), calqué sur test_acces_commandes."""
 
     def setUp(self):
+        super().setUp()
         self.client = APIClient()
         self.proprietaire = User.objects.create_user(username="proprietaire", password=MOT_DE_PASSE)
         self.autre = User.objects.create_user(username="autre", password=MOT_DE_PASSE)
@@ -314,3 +336,137 @@ class CommandesApiTest(TestCase):
         self.assertEqual(self.commande.total, Decimal("120.00"))
         self.assertEqual(self.commande.status, "pending")
         self.assertEqual(Commande.objects.count(), 2)
+
+
+class LimitationDeDebitTest(ApiTestCase):
+    """Limitation de débit (dette 4.9) : 429 au-delà du seuil.
+
+    Les seuils sont abaissés le temps du test. override_settings ne suffit
+    pas : DRF lit DEFAULT_THROTTLE_RATES une seule fois, à l'import, dans
+    l'attribut de classe THROTTLE_RATES. C'est lui qui est remplacé.
+    """
+    SEUILS_DE_TEST = {"anon": "3/min", "user": "5/min"}
+
+    def setUp(self):
+        super().setUp()
+        self.client = APIClient()
+        remplacement = patch.object(SimpleRateThrottle, "THROTTLE_RATES", self.SEUILS_DE_TEST)
+        remplacement.start()
+        self.addCleanup(remplacement.stop)
+
+    def test_seuils_de_production(self):
+        """60 requêtes par minute pour un visiteur, 1000 pour un utilisateur."""
+        taux = settings.REST_FRAMEWORK["DEFAULT_THROTTLE_RATES"]
+        self.assertEqual(taux, {"anon": "60/min", "user": "1000/min"})
+
+    def test_visiteur_au_dela_du_seuil_recoit_429(self):
+        """La 4e requête anonyme de la minute répond 429, avec Retry-After."""
+        for _ in range(3):
+            self.assertEqual(self.client.get(url("product-list")).status_code, 200)
+        reponse = self.client.get(url("product-list"))
+        self.assertEqual(reponse.status_code, 429)
+        self.assertIn("Retry-After", reponse)
+
+    def test_utilisateur_au_dela_du_seuil_recoit_429(self):
+        """Authentifié, la limite est celle du compte, plus haute que celle des visiteurs."""
+        utilisateur = User.objects.create_user(username="client", password=MOT_DE_PASSE)
+        self.client.force_authenticate(utilisateur)
+        for _ in range(5):
+            self.assertEqual(self.client.get(url("order-list")).status_code, 200)
+        self.assertEqual(self.client.get(url("order-list")).status_code, 429)
+
+    def test_demandes_de_jeton_limitees(self):
+        """La vue de jeton de DRF n'est pas limitée par défaut : ici, elle l'est.
+
+        Sans limite, elle permettrait d'essayer des mots de passe à volonté.
+        """
+        User.objects.create_user(username="client", password=MOT_DE_PASSE)
+        for _ in range(3):
+            reponse = self.client.post(url("token"), {"username": "client", "password": "faux"}, format="json")
+            self.assertEqual(reponse.status_code, 400)
+        reponse = self.client.post(url("token"), {"username": "client", "password": MOT_DE_PASSE}, format="json")
+        self.assertEqual(reponse.status_code, 429)
+        self.assertFalse(Token.objects.exists())
+
+    def test_visiteurs_comptes_par_adresse_du_client(self):
+        """Derrière l'Ingress, chaque client a son compteur : l'adresse retenue
+        est la dernière de X-Forwarded-For, celle ajoutée par l'Ingress."""
+        for _ in range(3):
+            self.client.get(url("product-list"), HTTP_X_FORWARDED_FOR="203.0.113.1")
+        bloque = self.client.get(url("product-list"), HTTP_X_FORWARDED_FOR="203.0.113.1")
+        autre = self.client.get(url("product-list"), HTTP_X_FORWARDED_FOR="203.0.113.2")
+        self.assertEqual(bloque.status_code, 429)
+        self.assertEqual(autre.status_code, 200)
+
+    def test_adresse_forgee_par_le_client_ne_contourne_pas_la_limite(self):
+        """Une adresse ajoutée en tête de X-Forwarded-For par le client est ignorée."""
+        for i in range(3):
+            self.client.get(url("product-list"), HTTP_X_FORWARDED_FOR=f"10.0.0.{i}, 203.0.113.1")
+        reponse = self.client.get(url("product-list"), HTTP_X_FORWARDED_FOR="10.0.0.99, 203.0.113.1")
+        self.assertEqual(reponse.status_code, 429)
+
+
+class DocumentationApiTest(ApiTestCase):
+    """Schéma OpenAPI et Swagger UI, sous /api/v1/."""
+
+    def setUp(self):
+        super().setUp()
+        self.client = APIClient()
+
+    def test_schema_openapi_decrit_les_routes(self):
+        """GET /api/v1/schema/ renvoie un document OpenAPI 3 avec toutes les routes."""
+        reponse = self.client.get(url("schema"), {"format": "json"})
+        self.assertEqual(reponse.status_code, 200)
+        schema = reponse.json()
+        self.assertTrue(schema["openapi"].startswith("3."))
+        self.assertEqual(schema["info"]["title"], "API Dilane Shop")
+        # drf-spectacular ajoute la version d'URL : « 1.0.0 (v1) »
+        self.assertEqual(schema["info"]["version"], "1.0.0 (v1)")
+        for chemin in [
+            "/api/v1/products/", "/api/v1/products/{id}/",
+            "/api/v1/categories/", "/api/v1/categories/{id}/",
+            "/api/v1/orders/", "/api/v1/orders/{id}/",
+            "/api/v1/auth/token/",
+        ]:
+            self.assertIn(chemin, schema["paths"])
+
+    def test_schema_ne_documente_que_la_lecture_des_ressources(self):
+        """Le catalogue et les commandes n'exposent que GET dans le schéma."""
+        schema = self.client.get(url("schema"), {"format": "json"}).json()
+        for chemin, operations in schema["paths"].items():
+            if chemin != "/api/v1/auth/token/":
+                self.assertEqual(set(operations) - {"parameters"}, {"get"}, chemin)
+
+    def test_swagger_ui_servi(self):
+        """GET /api/v1/docs/ renvoie la page HTML de Swagger UI."""
+        reponse = self.client.get(url("docs"))
+        self.assertEqual(reponse.status_code, 200)
+        self.assertTrue(reponse["Content-Type"].startswith("text/html"))
+        self.assertContains(reponse, 'id="swagger-ui"')
+
+    def test_swagger_ui_compatible_avec_la_csp(self):
+        """Aucun script inline : chaque script vient de jsdelivr ou du site.
+
+        La CSP n'autorise que 'self', les jetons et quelques CDN. Un script
+        inline sans jeton serait bloqué, et la page resterait blanche.
+        """
+        page = self.client.get(url("docs")).content.decode()
+        scripts = re.findall(r"<script([^>]*)>(.*?)</script>", page, re.S)
+        self.assertTrue(scripts)
+        for attributs, contenu in scripts:
+            self.assertEqual(contenu.strip(), "", "script inline")
+            source = re.search(r'src="([^"]+)"', attributs).group(1)
+            self.assertTrue(
+                source.startswith("https://cdn.jsdelivr.net/npm/swagger-ui-dist@5.33.0/")
+                or source.startswith("/api/v1/docs/"),
+                source,
+            )
+        self.assertNotIn("unpkg.com", page)
+        self.assertIn(settings.SPECTACULAR_SETTINGS["SWAGGER_UI_DIST"], page)
+
+    def test_script_d_amorcage_servi_par_le_site(self):
+        """Le script d'amorçage de Swagger UI est un fichier du site, pointant vers le schéma."""
+        reponse = self.client.get(url("docs"), {"script": ""})
+        self.assertEqual(reponse.status_code, 200)
+        self.assertTrue(reponse["Content-Type"].startswith("application/javascript"))
+        self.assertIn("/api/v1/schema/", reponse.content.decode())

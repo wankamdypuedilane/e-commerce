@@ -62,6 +62,7 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'rest_framework',
     'rest_framework.authtoken',
+    'drf_spectacular',
     'shop',
 ]
 
@@ -281,6 +282,38 @@ REST_FRAMEWORK = {
     'DEFAULT_VERSIONING_CLASS': 'rest_framework.versioning.URLPathVersioning',
     'DEFAULT_VERSION': 'v1',
     'ALLOWED_VERSIONS': ['v1'],
+    # Limitation de débit (dette 4.9) : au-delà, réponse 429 et en-tête
+    # Retry-After. Visiteurs comptés par adresse IP, utilisateurs par compte.
+    'DEFAULT_THROTTLE_CLASSES': [
+        'rest_framework.throttling.AnonRateThrottle',
+        'rest_framework.throttling.UserRateThrottle',
+    ],
+    'DEFAULT_THROTTLE_RATES': {
+        'anon': '60/min',
+        'user': '1000/min',
+    },
+    # Un seul proxy devant Django, l'Ingress : l'adresse du client est la
+    # dernière de X-Forwarded-For, celle qu'il ajoute. Les précédentes sont
+    # fournies par le client et ne doivent pas servir à le compter.
+    'NUM_PROXIES': 1,
+    'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
+}
+
+# Documentation OpenAPI : schéma sous /api/v1/schema/, Swagger UI sous
+# /api/v1/docs/. Swagger UI est chargé depuis jsdelivr, déjà autorisé par
+# la CSP, en version figée. La vue « split » sert son script d'amorçage
+# comme un fichier de la même origine : aucun script inline, que la CSP
+# bloquerait faute de jeton.
+SPECTACULAR_SETTINGS = {
+    'TITLE': 'API Dilane Shop',
+    'DESCRIPTION': (
+        "API REST interne de la boutique : catalogue en lecture publique, "
+        "commandes de l'utilisateur authentifié par jeton."
+    ),
+    'VERSION': '1.0.0',
+    'SERVE_INCLUDE_SCHEMA': False,
+    'SWAGGER_UI_DIST': 'https://cdn.jsdelivr.net/npm/swagger-ui-dist@5.33.0',
+    'SWAGGER_UI_FAVICON_HREF': 'https://cdn.jsdelivr.net/npm/swagger-ui-dist@5.33.0/favicon-32x32.png',
 }
 
 
