@@ -151,13 +151,9 @@
 </div>
 {% endblock content %} {% block js %}
 <script nonce="{{ csp_nonce }}" type="text/javascript">
-  var cartStorageKey = window.cartStorageKey || "panier_guest";
-  var panier = JSON.parse(localStorage.getItem(cartStorageKey)) || {};
+  // Panier commun (static/shop/panier.js)
+  var panier = Panier.contenu;
   var taxRatePercent = parseFloat("{{ tax_rate_percent|default:'20' }}") || 20;
-
-  function persistPanier() {
-    localStorage.setItem(cartStorageKey, JSON.stringify(panier));
-  }
 
   function renderCheckout() {
     var subtotalHt = 0;
@@ -216,40 +212,18 @@
     $("#items").val(JSON.stringify(itemsPourDjango));
   }
 
+  // Sans contrôle du stock ici, comme avant : le serveur le vérifie
+  // à la validation de la commande.
   $(document).on("click", ".checkout-plus", function () {
-    var id = this.getAttribute("data-id");
-    if (!panier[id]) return;
-
-    var unitPrice = panier[id][2] / panier[id][0];
-    panier[id][0] += 1;
-    panier[id][2] += unitPrice;
-    persistPanier();
-    renderCheckout();
+    if (Panier.incrementer(this.getAttribute("data-id"), false)) renderCheckout();
   });
 
   $(document).on("click", ".checkout-minus", function () {
-    var id = this.getAttribute("data-id");
-    if (!panier[id]) return;
-
-    var unitPrice = panier[id][2] / panier[id][0];
-    panier[id][0] -= 1;
-    if (panier[id][0] <= 0) {
-      delete panier[id];
-    } else {
-      panier[id][2] -= unitPrice;
-    }
-
-    persistPanier();
-    renderCheckout();
+    if (Panier.decrementer(this.getAttribute("data-id"))) renderCheckout();
   });
 
   $(document).on("click", ".checkout-remove", function () {
-    var id = this.getAttribute("data-id");
-    if (!panier[id]) return;
-
-    delete panier[id];
-    persistPanier();
-    renderCheckout();
+    if (Panier.supprimer(this.getAttribute("data-id"))) renderCheckout();
   });
 
   renderCheckout();
