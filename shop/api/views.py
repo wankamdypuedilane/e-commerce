@@ -1,5 +1,7 @@
 from rest_framework import viewsets
+from rest_framework.authtoken.views import ObtainAuthToken
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.throttling import AnonRateThrottle
 
 from shop.models import Category, Commande, Product
 
@@ -40,3 +42,13 @@ class CommandeViewSet(viewsets.ReadOnlyModelViewSet):
             .prefetch_related('order_items__product')
             .order_by('-date_commande', '-id')
         )
+
+
+class ObtainAuthTokenView(ObtainAuthToken):
+    """Obtention d'un jeton, soumise à la limitation de débit.
+
+    La vue de DRF désactive toute limitation (throttle_classes vide) : elle
+    permettrait d'essayer des mots de passe sans limite. Les demandes de
+    jeton étant anonymes, la limite des visiteurs s'applique.
+    """
+    throttle_classes = [AnonRateThrottle]
