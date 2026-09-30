@@ -60,6 +60,8 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'rest_framework',
+    'rest_framework.authtoken',
     'shop',
 ]
 
@@ -257,6 +259,28 @@ LOGGING = {
             'propagate': False,
         },
     },
+}
+
+
+# API REST interne (issue #56), servie sous /api/v1/.
+# Lecture publique, écriture réservée aux utilisateurs authentifiés, par
+# jeton (clients de l'API) ou par session (navigateur connecté au site).
+# Rendu JSON uniquement : l'API navigable de DRF charge ses propres scripts
+# et styles, que la CSP ci-dessous bloquerait.
+REST_FRAMEWORK = {
+    'DEFAULT_AUTHENTICATION_CLASSES': [
+        'rest_framework.authentication.TokenAuthentication',
+        'rest_framework.authentication.SessionAuthentication',
+    ],
+    'DEFAULT_PERMISSION_CLASSES': [
+        'rest_framework.permissions.IsAuthenticatedOrReadOnly',
+    ],
+    'DEFAULT_RENDERER_CLASSES': [
+        'rest_framework.renderers.JSONRenderer',
+    ],
+    'DEFAULT_VERSIONING_CLASS': 'rest_framework.versioning.URLPathVersioning',
+    'DEFAULT_VERSION': 'v1',
+    'ALLOWED_VERSIONS': ['v1'],
 }
 
 

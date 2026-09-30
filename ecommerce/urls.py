@@ -15,7 +15,7 @@ Including another URLconf
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
 from django.contrib import admin
-from django.urls import path, include
+from django.urls import path, include, re_path
 from django.contrib.auth import views as auth_views
 from django.conf import settings
 from django.conf.urls.static import static
@@ -60,6 +60,9 @@ urlpatterns = [
         name='admin_password_reset_complete',
     ),
     path('admin/', admin.site.urls),
+    # API REST : la version fait partie du chemin (URLPathVersioning).
+    # Seule v1 existe ; toute autre version ne correspond à aucune route.
+    re_path(r'^api/(?P<version>v1)/', include('shop.api.urls')),
     path('',include('shop.urls'))
 ]
 
