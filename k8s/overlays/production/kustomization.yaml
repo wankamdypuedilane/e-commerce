@@ -18,7 +18,7 @@ resources:
 images:
   - name: dilane-shop
     newName: ghcr.io/wankamdypuedilane/dilane-shop
-    newTag: c6d39c7d8409e01dabbe483daf83308648f42ba7
+    newTag: b5a554addb639949dcef90d7484dffbd2b15a1be
 
 patches:
   # Domaine public, dans la regle et dans la section TLS de l'Ingress.
