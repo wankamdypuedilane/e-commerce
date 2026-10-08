@@ -78,6 +78,25 @@ class SessionStripeTest(SimpleTestCase):
         self.assertIn("order_id=42", parametres["success_url"])
         self.assertIn("order_id=42", parametres["cancel_url"])
         self.assertEqual(total_en_centimes(parametres["line_items"]), 24000)
+        self.assertEqual(parametres["allowed_payment_method_types"], ["card"])
+
+    @patch("stripe.checkout.Session.create")
+    def test_parametres_declares_par_le_sdk_installe(self, creation):
+        """Chaque paramètre envoyé existe dans la version installée du SDK Stripe.
+
+        Session.create est simulé partout dans les tests : un paramètre retiré
+        par une version majeure du SDK passerait donc inaperçu, puis serait
+        refusé par l'API en production. Stripe 16 a ainsi remplacé
+        payment_method_types par allowed_payment_method_types. Le SDK ne
+        vérifie pas les paramètres à l'exécution ; ses annotations, si.
+        """
+        from stripe.params.checkout import SessionCreateParams
+
+        create_stripe_checkout_session(
+            self.requete, self.commande, self.articles, "client@example.com",
+        )
+        inconnus = set(creation.call_args.kwargs) - set(SessionCreateParams.__annotations__)
+        self.assertEqual(inconnus, set(), f"Paramètres absents du SDK Stripe installé : {inconnus}")
 
     @override_settings(STRIPE_SECRET_KEY="")
     @patch("stripe.checkout.Session.create")

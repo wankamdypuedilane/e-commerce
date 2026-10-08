@@ -139,7 +139,7 @@ def create_stripe_checkout_session(
 
     return stripe.checkout.Session.create(
         mode='payment',
-        payment_method_types=['card'],
+        allowed_payment_method_types=['card'],
         customer_email=customer_email,
         line_items=build_stripe_line_items(items_verifies, tax_amount=tax_amount, rate_percent=rate_percent),
         success_url=success_url,
