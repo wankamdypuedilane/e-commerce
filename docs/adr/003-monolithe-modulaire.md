@@ -4,7 +4,7 @@
 
 Accepté — 20/09/2026. Décision actée ; implémentation prévue au **Sprint 12**, après la mise en place des tests du Sprint 11. Issue #14.
 
-**En cours de mise en œuvre — 09/10/2026.** Apps extraites : `catalog`, `orders`, `notifications`, puis `payments` (#49). Voir [Mise en œuvre](#mise-en-œuvre).
+**En cours de mise en œuvre — 09/10/2026.** Apps extraites : `catalog`, `orders`, `notifications`, `payments`, puis `accounts` (#49). `cart` reportée à #120. Voir [Mise en œuvre](#mise-en-œuvre).
 
 ---
 
@@ -147,6 +147,19 @@ L'intégration Stripe quitte `shop`, sans changement de logique.
 - **Exemption CSRF testée.** Stripe n'envoie pas de jeton CSRF ; la perte de `@csrf_exempt` pendant le déplacement aurait fait refuser chaque événement (403). Le client de test de Django ne vérifie pas le CSRF par défaut : le nouveau test le demande explicitement, et échoue bien sans le décorateur.
 - **Journalisation** sous le logger `payments`, déclaré dans `LOGGING`.
 - **Écart à la règle de frontière, toujours présent** : le webhook manipule directement `Commande`, `OrderItem` et `Product` (verrous `select_for_update`, drapeau `stock_deducted`). Le faire passer par des services d'`orders` et de `catalog` touche à la transaction qui garantit l'idempotence ; c'est un changement de comportement possible, à faire séparément et à tester sous appels simultanés (#67).
+
+### Étape 5 — `accounts` (09/10/2026)
+
+L'authentification quitte `shop` : vues d'inscription, de connexion et de déconnexion, formulaires, moteur d'authentification par email ou identifiant, routes et gabarits de réinitialisation du mot de passe.
+
+- **Rendu identique.** Six pages et six parcours (connexion réussie et ratée, déconnexion, demande de réinitialisation, lien valide, inscription avec email déjà pris) ont été capturés avant et après, jetons CSRF et nonces masqués. Seuls changent les noms des gabarits (`shop/…` → `accounts/…`) et le chemin du moteur enregistré en session. Les routes du site sont identiques à celles de `main`.
+- **Sessions ouvertes conservées.** Chaque session enregistre le chemin du moteur qui l'a authentifiée, et Django ignore une session dont le chemin ne figure pas dans `AUTHENTICATION_BACKENDS`. Changer ce chemin aurait déconnecté tout le monde au déploiement, administrateurs compris. L'ancien chemin reste donc déclaré, en seconde position, vers `shop/backends.py` : un alias qui relit les sessions sans authentifier personne (sinon chaque connexion ratée vérifierait le mot de passe deux fois). `accounts/tests.py` ouvre une session sous l'ancien chemin et vérifie qu'elle reste valide, y compris pour l'admin ; le test échoue si la ligne de transition disparaît. Retrait prévu par #135, deux semaines après le déploiement.
+- **Conséquence technique :** avec deux moteurs déclarés, `login()` exige un chemin explicite quand l'utilisateur n'est pas passé par `authenticate()`. C'est le cas de l'inscription, qui précise désormais `backend=`.
+- **Bug #124 inchangé.** Les gabarits `registration/password_reset_email.html` et `password_reset_subject.txt` suivent dans `accounts`, toujours masqués par ceux de l'admin de Django : l'email de réinitialisation reste celui de Django. La correction relève de #124.
+
+### Bilan du découpage
+
+Cinq des six apps prévues existent : `catalog`, `orders`, `notifications`, `payments`, `accounts`. **`cart` n'a pas été créée** : le panier reste entièrement côté navigateur (`shop/static/shop/panier.js`), et une app vide n'apporterait rien. Elle naîtra avec le panier côté serveur (#120). Écart restant à la règle de frontière : `shop` et `payments` importent encore directement les modèles de `catalog` et d'`orders` (vues, webhook, API).
 
 ---
 

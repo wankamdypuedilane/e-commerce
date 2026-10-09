@@ -64,6 +64,7 @@ urlpatterns = [
     # Seule v1 existe ; toute autre version ne correspond à aucune route.
     re_path(r'^api/(?P<version>v1)/', include('shop.api.urls')),
     path('', include('payments.urls')),
+    path('', include('accounts.urls')),
     path('',include('shop.urls'))
 ]
 

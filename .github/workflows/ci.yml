@@ -45,7 +45,7 @@ jobs:
         run: >
           docker run --rm -v "$PWD:/src:ro" -w /src python:3.13-slim
           sh -c "pip install --quiet --root-user-action=ignore bandit==1.9.4
-          && bandit -r catalog orders notifications payments shop ecommerce -x '*/migrations/*,*/test*.py'"
+          && bandit -r catalog orders notifications payments accounts shop ecommerce -x '*/migrations/*,*/test*.py'"
 
       - name: Build image
         run: docker compose build web tests

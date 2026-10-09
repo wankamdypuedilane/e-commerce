@@ -67,6 +67,7 @@ INSTALLED_APPS = [
     'orders',
     'notifications',
     'payments',
+    'accounts',
     'shop',
 ]
 
@@ -182,6 +183,9 @@ LOGOUT_REDIRECT_URL = '/'
 
 # Authenticate users with either email or username.
 AUTHENTICATION_BACKENDS = [
+    'accounts.backends.EmailOrUsernameModelBackend',
+    # Transition (#49) : relit les sessions ouvertes avant le déplacement du
+    # moteur, sans authentifier personne. Voir shop/backends.py ; à retirer par #135.
     'shop.backends.EmailOrUsernameModelBackend',
 ]
 
