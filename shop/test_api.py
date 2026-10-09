@@ -27,7 +27,7 @@ from rest_framework.test import APIClient
 from rest_framework.throttling import SimpleRateThrottle
 
 from catalog.models import Category, Product
-from .models import Commande, OrderItem
+from orders.models import Commande, OrderItem
 
 User = get_user_model()
 MOT_DE_PASSE = "Mot-de-passe-de-test-42"

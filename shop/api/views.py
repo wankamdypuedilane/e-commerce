@@ -4,7 +4,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.throttling import AnonRateThrottle
 
 from catalog.models import Category, Product
-from shop.models import Commande
+from orders.models import Commande
 
 from .serializers import CategorySerializer, CommandeSerializer, ProductSerializer
 

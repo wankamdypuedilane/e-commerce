@@ -4,7 +4,7 @@
 
 Accepté — 20/09/2026. Décision actée ; implémentation prévue au **Sprint 12**, après la mise en place des tests du Sprint 11. Issue #14.
 
-**En cours de mise en œuvre — 09/10/2026.** Première app extraite : `catalog` (#49). Voir [Mise en œuvre](#mise-en-œuvre).
+**En cours de mise en œuvre — 09/10/2026.** Apps extraites : `catalog`, puis `orders` (#49). Voir [Mise en œuvre](#mise-en-œuvre).
 
 ---
 
@@ -114,6 +114,18 @@ Le découpage avance app par app, une PR à chaque fois, avec la suite de tests 
 - **Types de contenu renommés, pas recréés.** Sans cela, Django aurait créé `catalog.product` à côté de `shop.product`, et les permissions déjà attribuées ainsi que les liens de l'historique d'administration seraient restés sur l'ancien type. La migration renomme les deux types en conservant leurs identifiants. Elle gère aussi le retour arrière : le type vide que Django recrée lors d'un `migrate` en arrière est remplacé par l'original.
 - **Vérifié sur une base peuplée** (catalogue de démonstration, une commande, une permission de groupe, une permission directe, une entrée d'historique) : seul `app_label` change sur les deux types de contenu ; aller, retour puis aller de nouveau ramènent exactement aux mêmes états. `catalog/tests.py` rejoue la migration et échoue si le renommage disparaît.
 - **Écart à la règle de frontière, assumé pour cette étape.** `shop` importe encore `catalog.models` directement (vues, API, administration, tests). Le passage par un `catalog/services.py` viendra quand les autres apps seront extraites, pour ne pas mêler deux refactorisations dans la même PR.
+
+### Étape 2 — `orders` (09/10/2026)
+
+`Commande` et `OrderItem` ont quitté `shop` pour l'app `orders`, avec leur administration. Même méthode que pour `catalog` : `orders/migrations/0001_initial.py` et `shop/migrations/0018` ne produisent aucun SQL, et les types de contenu sont renommés en conservant leurs identifiants.
+
+- **`shop` ne porte plus aucun modèle** ; `shop/models.py` est supprimé. Elle garde les vues, les services, l'authentification, l'API et les gabarits, en attendant les apps `payments`, `accounts` et `notifications`.
+- **Contraintes conservées.** L'unicité de `stripe_checkout_session_id`, dont dépend l'idempotence du webhook, et les clés étrangères de `shop_orderitem` gardent leur nom en base ; un test vérifie que l'unicité tient toujours.
+- **Vérifié sur une base peuplée** construite avec le code de `main` (trois commandes, leurs lignes, une permission de groupe, une permission directe, deux entrées d'historique) : seul `app_label` change ; aller, retour et aller de nouveau ramènent aux mêmes états.
+- **Bandit élargi.** La CI n'analysait que `shop` et `ecommerce` : `catalog`, extraite à l'étape 1, échappait à l'analyse statique. Les deux nouvelles apps sont désormais incluses.
+- **Outil de test partagé.** `ecommerce/migrations_de_test.py` rejoue les migrations jusqu'à une cible ; les tests de `catalog` et d'`orders` s'en servent. Les fonctions de renommage des types de contenu, elles, sont recopiées dans chaque migration plutôt qu'importées : une migration est un instantané figé.
+
+L'écart à la règle de frontière noté à l'étape 1 demeure : `shop` importe directement `catalog.models` et `orders.models`.
 
 ---
 

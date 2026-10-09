@@ -12,7 +12,7 @@ from django.test import TestCase
 from django.urls import reverse
 
 from catalog.models import Category, Product
-from .models import Commande, OrderItem
+from orders.models import Commande, OrderItem
 
 User = get_user_model()
 

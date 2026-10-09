@@ -12,7 +12,7 @@ from django.contrib.auth.decorators import login_required
 from django.views.decorators.csrf import csrf_exempt
 from django.db import transaction
 from catalog.models import Category, Product
-from .models import Commande, OrderItem
+from orders.models import Commande, OrderItem
 from .services import (
     sync_commande_payment_from_stripe,
     stripe_is_configured,
