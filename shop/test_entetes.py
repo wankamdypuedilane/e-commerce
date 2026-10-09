@@ -12,7 +12,7 @@ from django.contrib.auth import get_user_model
 from django.test import TestCase
 from django.urls import reverse
 
-from .models import Category, Product
+from catalog.models import Category, Product
 
 
 class EnTetesDeSecuriteTest(TestCase):

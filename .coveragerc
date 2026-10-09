@@ -5,6 +5,7 @@
 data_file = /tmp/.coverage
 # Code mesuré : l'application et sa configuration
 source =
+    catalog
     shop
     ecommerce
 # Exclus : ce qui n'a pas vocation à être testé

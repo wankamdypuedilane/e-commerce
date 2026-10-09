@@ -14,7 +14,7 @@ from prometheus_client import REGISTRY
 
 from . import metrics as mesures
 from .metrics import ROUTE_INCONNUE
-from .models import Category, Product
+from catalog.models import Category, Product
 
 
 def releve(nom, etiquettes):

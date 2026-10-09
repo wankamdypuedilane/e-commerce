@@ -10,7 +10,8 @@ from decimal import Decimal
 from django.contrib import admin
 from django.test import TestCase
 
-from .models import Category, Commande, OrderItem, Product
+from catalog.models import Category, Product
+from .models import Commande, OrderItem
 
 
 class PanierLisibleTest(TestCase):
