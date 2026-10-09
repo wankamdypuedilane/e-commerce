@@ -4,7 +4,7 @@
 
 Accepté — 20/09/2026. Décision actée ; implémentation prévue au **Sprint 12**, après la mise en place des tests du Sprint 11. Issue #14.
 
-**En cours de mise en œuvre — 09/10/2026.** Apps extraites : `catalog`, puis `orders` (#49). Voir [Mise en œuvre](#mise-en-œuvre).
+**En cours de mise en œuvre — 09/10/2026.** Apps extraites : `catalog`, `orders`, puis `notifications` (#49). Voir [Mise en œuvre](#mise-en-œuvre).
 
 ---
 
@@ -126,6 +126,16 @@ Le découpage avance app par app, une PR à chaque fois, avec la suite de tests 
 - **Outil de test partagé.** `ecommerce/migrations_de_test.py` rejoue les migrations jusqu'à une cible ; les tests de `catalog` et d'`orders` s'en servent. Les fonctions de renommage des types de contenu, elles, sont recopiées dans chaque migration plutôt qu'importées : une migration est un instantané figé.
 
 L'écart à la règle de frontière noté à l'étape 1 demeure : `shop` importe directement `catalog.models` et `orders.models`.
+
+### Étape 3 — `notifications` (09/10/2026)
+
+Première app sans modèle : seul du code et des gabarits changent de place.
+
+- **`notifications/services.py`** reçoit `send_order_confirmation_email` et `build_order_items_payload`, sans changement de code. Les gabarits passent de `shop/emails/` à `notifications/emails/` (déplacés avec `git mv`, historique conservé).
+- **Premier contrat de service.** `shop` (vues et services de paiement) n'appelle plus que `notifications.services.send_order_confirmation_email` : c'est la règle de frontière de cet ADR, appliquée pour la première fois.
+- **Journalisation.** Les messages du module portent désormais le logger `notifications`, déclaré dans `LOGGING` comme `shop`.
+- **Vérifié à l'identique.** L'email (sujet, destinataire, texte, HTML) a été généré avant et après le déplacement pour une même commande, avec un produit supprimé et des caractères spéciaux : sortie identique au caractère près.
+- **Défaut existant relevé, non corrigé ici** : la version texte de l'email est échappée comme du HTML (« Jean & Co » y devient « Jean &amp; Co »). Le corriger changerait le comportement  ; issue #132.
 
 ---
 

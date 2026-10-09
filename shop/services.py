@@ -2,9 +2,9 @@ import logging
 from decimal import Decimal, ROUND_HALF_UP
 
 from django.conf import settings
-from django.core.mail import EmailMultiAlternatives
-from django.template.loader import render_to_string
 from django.urls import reverse
+
+from notifications.services import send_order_confirmation_email
 
 logger = logging.getLogger(__name__)
 
@@ -35,57 +35,6 @@ def calculate_tax_totals(subtotal_ht):
     tax_amount = (subtotal_ht * rate_percent / Decimal('100')).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
     total_ttc = (subtotal_ht + tax_amount).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
     return rate_percent, tax_amount, total_ttc
-
-
-def build_order_items_payload(commande):
-    order_items = list(commande.order_items.select_related('product').all())
-    return [
-        {
-            'title': item.product.title if item.product else 'Produit supprimé',
-            'quantity': item.quantity,
-            'price': str(item.price),
-            'subtotal': str(item.price * item.quantity),
-        }
-        for item in order_items
-    ]
-
-
-def send_order_confirmation_email(commande):
-    if not commande.email or commande.confirmation_email_sent:
-        return False
-
-    items = build_order_items_payload(commande)
-    context = {
-        'commande': commande,
-        'items': items,
-        'site_name': 'Dilane-shop',
-    }
-
-    subject = f"Confirmation de commande #{commande.id}"
-    text_body = render_to_string('shop/emails/order_confirmation_email.txt', context)
-    html_body = None
-    try:
-        html_body = render_to_string('shop/emails/order_confirmation_email.html', context)
-    except Exception as exc:
-        logger.exception(
-            "HTML confirmation email rendering failed for order %s: %s",
-            commande.id,
-            exc,
-        )
-
-    email = EmailMultiAlternatives(
-        subject=subject,
-        body=text_body,
-        from_email=settings.DEFAULT_FROM_EMAIL,
-        to=[commande.email],
-    )
-    if html_body:
-        email.attach_alternative(html_body, 'text/html')
-    email.send(fail_silently=False)
-
-    commande.confirmation_email_sent = True
-    commande.save(update_fields=['confirmation_email_sent'])
-    return True
 
 
 def build_stripe_line_items(items_verifies, tax_amount=None, rate_percent=None):

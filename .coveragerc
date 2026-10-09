@@ -7,6 +7,7 @@ data_file = /tmp/.coverage
 source =
     catalog
     orders
+    notifications
     shop
     ecommerce
 # Exclus : ce qui n'a pas vocation à être testé

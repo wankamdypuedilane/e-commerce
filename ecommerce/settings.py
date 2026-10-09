@@ -65,6 +65,7 @@ INSTALLED_APPS = [
     'drf_spectacular',
     'catalog',
     'orders',
+    'notifications',
     'shop',
 ]
 
@@ -257,6 +258,12 @@ LOGGING = {
             'propagate': False,
         },
         'shop': {
+            'handlers': ['console'],
+            'level': LOG_LEVEL,
+            'propagate': False,
+        },
+        # Échec de rendu ou d'envoi des emails de confirmation (#49).
+        'notifications': {
             'handlers': ['console'],
             'level': LOG_LEVEL,
             'propagate': False,

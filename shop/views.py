@@ -13,13 +13,13 @@ from django.views.decorators.csrf import csrf_exempt
 from django.db import transaction
 from catalog.models import Category, Product
 from orders.models import Commande, OrderItem
+from notifications.services import send_order_confirmation_email
 from .services import (
     sync_commande_payment_from_stripe,
     stripe_is_configured,
     create_stripe_checkout_session,
     calculate_tax_totals,
     get_tax_rate_percent,
-    send_order_confirmation_email,
 )
 
 try:
