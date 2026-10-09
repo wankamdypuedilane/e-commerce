@@ -1,5 +1,11 @@
+"""Commandes et lignes de commande (ADR-003, #49).
+
+Les deux modèles viennent de l'app `shop`. Comme pour `catalog`, leurs tables
+gardent leur nom d'origine (`db_table`) : le déplacement ne change que le
+code, pas la base. Voir orders/migrations/0001_initial.py.
+"""
+from django.contrib.auth.models import User
 from django.db import models
-from django.contrib.auth.models import User 
 
 
 class Commande(models.Model):
@@ -40,6 +46,7 @@ class Commande(models.Model):
     user          = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
 
     class Meta:
+        db_table = 'shop_commande'
         ordering = ['-date_commande']
 
     def __str__(self):
@@ -53,6 +60,7 @@ class OrderItem(models.Model):
     quantity = models.PositiveIntegerField()
 
     class Meta:
+        db_table = 'shop_orderitem'
         verbose_name = 'Article de commande'
         verbose_name_plural = 'Articles de commande'
 

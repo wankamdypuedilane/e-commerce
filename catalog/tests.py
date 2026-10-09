@@ -5,12 +5,11 @@ mêmes permissions attribuées. Ces tests le vérifient en rejouant la
 migration sur une base où le catalogue appartient encore à `shop`.
 """
 from django.apps import apps
-from django.db import connection
-from django.db.migrations.executor import MigrationExecutor
 from django.test import SimpleTestCase, TransactionTestCase
 
+from ecommerce.migrations_de_test import migrer
+
 AVANT = [("shop", "0016_alter_orderitem_options_alter_product_options"), ("catalog", None)]
-APRES = [("shop", "0017_deplacer_catalogue_vers_catalog"), ("catalog", "0001_initial")]
 
 
 class EmplacementDesModelesTest(SimpleTestCase):
@@ -28,29 +27,18 @@ class EmplacementDesModelesTest(SimpleTestCase):
         self.assertEqual(apps.get_model("catalog", "Product")._meta.db_table, "shop_product")
 
     def test_la_ligne_de_commande_pointe_vers_catalog(self):
-        champ = apps.get_model("shop", "OrderItem")._meta.get_field("product")
+        champ = apps.get_model("orders", "OrderItem")._meta.get_field("product")
         self.assertIs(champ.related_model, apps.get_model("catalog", "Product"))
 
 
 class MigrationDuCatalogueTest(TransactionTestCase):
     """Rejoue catalog.0001 et shop.0017 sur une base peuplée à l'ancienne."""
 
-    def migrer(self, cible):
-        executeur = MigrationExecutor(connection)
-        executeur.loader.build_graph()
-        executeur.migrate(cible)
-        executeur.loader.build_graph()
-        # État complet : dernières migrations des autres apps, et pour shop et
-        # catalog celles de la cible (project_state n'accepte pas « zéro »).
-        noeuds = [n for n in executeur.loader.graph.leaf_nodes() if n[0] not in ("shop", "catalog")]
-        noeuds += [n for n in cible if n[1]]
-        return executeur.loader.project_state(noeuds).apps
-
     def tearDown(self):
-        self.migrer(APRES)  # laisser la base dans l'état attendu par les autres tests
+        migrer()  # laisser la base dans l'état attendu par les autres tests
 
     def test_donnees_et_permissions_conservees(self):
-        anciennes = self.migrer(AVANT)
+        anciennes = migrer(AVANT)
         ContentType = anciennes.get_model("contenttypes", "ContentType")
         Permission = anciennes.get_model("auth", "Permission")
         Group = anciennes.get_model("auth", "Group")
@@ -67,7 +55,7 @@ class MigrationDuCatalogueTest(TransactionTestCase):
             title="Casque", price="99.90", description="", category=categorie, stock=3,
         )
 
-        nouvelles = self.migrer(APRES)
+        nouvelles = migrer()
 
         Produit = nouvelles.get_model("catalog", "Product")
         self.assertEqual(Produit.objects.get(pk=produit.pk).category.name, "Audio")

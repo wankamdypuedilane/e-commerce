@@ -1,0 +1,49 @@
+from django.contrib import admin
+from django.utils.html import format_html_join
+
+from .models import Commande, OrderItem
+
+
+class AdminCommande(admin.ModelAdmin):
+    list_display  = ('panier_lisible', 'nom', 'email', 'subtotal_ht', 'tax_amount', 'total', 'status', 'payment_status', 'date_commande')
+    search_fields = ('nom', 'email', 'payment_reference', 'stripe_checkout_session_id')
+    list_editable = ('status', 'payment_status')
+    inlines = []
+
+    def panier_lisible(self, obj):
+        order_items = obj.order_items.select_related('product').all()
+        lignes = [
+            (
+                item.product.title if item.product else "Produit supprimé",
+                item.quantity,
+                item.price * item.quantity,
+            )
+            for item in order_items
+        ]
+        if lignes:
+            # format_html_join échappe chaque valeur insérée : un titre de
+            # produit ne peut jamais être interprété comme du HTML.
+            return format_html_join("", "<b>{}</b> x{} — {} €<br>", lignes)
+
+        return "Détails indisponibles"
+
+    panier_lisible.short_description = "Articles commandés"
+
+
+class OrderItemInline(admin.TabularInline):
+    model = OrderItem
+    extra = 0
+    readonly_fields = ('product', 'price', 'quantity')
+    can_delete = False
+
+
+AdminCommande.inlines = [OrderItemInline]
+
+
+admin.site.register(Commande, AdminCommande)
+
+
+@admin.register(OrderItem)
+class AdminOrderItem(admin.ModelAdmin):
+    list_display = ('commande', 'product', 'price', 'quantity')
+    list_select_related = ('commande', 'product')

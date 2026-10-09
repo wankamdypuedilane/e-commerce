@@ -11,7 +11,7 @@ from django.contrib import admin
 from django.test import TestCase
 
 from catalog.models import Category, Product
-from .models import Commande, OrderItem
+from orders.models import Commande, OrderItem
 
 
 class PanierLisibleTest(TestCase):
