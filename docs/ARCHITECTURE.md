@@ -190,9 +190,10 @@ e-commerce/
 | `django.contrib.messages` | Django | Utilisé par 7 appels `messages.*` dans `shop/views.py` (succès checkout, connexion, inscription, déconnexion, annulation de paiement, erreurs de retour Stripe). |
 | `django.contrib.staticfiles` | Django | Collecte `shop/static/` vers `STATIC_ROOT = BASE_DIR / 'staticfiles'`. Depuis le Sprint 9, les fichiers sont **servis par WhiteNoise**, pas par Nginx : middleware `whitenoise.middleware.WhiteNoiseMiddleware` en troisième position (`settings.py:72`) et `STORAGES['staticfiles']` en `CompressedManifestStaticFilesStorage` (`settings.py:202-209`). `collectstatic` est exécuté pendant la construction de l'image. |
 | `catalog` | Projet | **Catalogue** (#49, première étape du découpage de l'[ADR-003](adr/003-monolithe-modulaire.md)). Modèles `Category` et `Product`, et leur administration (`catalog/admin.py`). Les tables gardent leur nom d'origine, `shop_category` et `shop_product` (`Meta.db_table`) : le déplacement n'a modifié que l'état des migrations, pas la base. |
-| `orders` | Projet | **Commandes** (#49, deuxième étape de l'[ADR-003](adr/003-monolithe-modulaire.md)). Modèles `Commande` et `OrderItem`, et leur administration (`orders/admin.py`, dont `panier_lisible`). Tables inchangées : `shop_commande` et `shop_orderitem` (`Meta.db_table`). |
+| `orders` | Projet | **Commandes** (#49, deuxième étape de l'[ADR-003](adr/003-monolithe-modulaire.md)). Modèles `Commande` et `OrderItem`, leur administration (`orders/admin.py`, dont `panier_lisible`) et le calcul de la TVA (`orders/services.py`). Tables inchangées : `shop_commande` et `shop_orderitem` (`Meta.db_table`). |
 | `notifications` | Projet | **Emails transactionnels** (#49, troisième étape de l'[ADR-003](adr/003-monolithe-modulaire.md)). `notifications/services.py` (`send_order_confirmation_email`, `build_order_items_payload`) et les gabarits `notifications/emails/order_confirmation_email.{txt,html}`. Aucun modèle. Journalisation sous le logger `notifications`. |
-| `shop` | Projet | **App métier historique, en cours de découpage. Ne porte plus aucun modèle.** Garde les vues, les services de paiement Stripe et de TVA, l'authentification par email, l'API REST, les gabarits des pages et le JavaScript du panier. Le catalogue est passé dans `catalog`, les commandes dans `orders`, les emails dans `notifications` (#49) ; payments et accounts suivront. |
+| `payments` | Projet | **Paiement Stripe** (#49, quatrième étape de l'[ADR-003](adr/003-monolithe-modulaire.md)). `payments/services.py` (session Checkout, synchronisation du statut de paiement) et le webhook `payments/views.py`, seul code qui décrémente le stock. Adresse du webhook inchangée : `/webhooks/stripe/`, enregistrée chez Stripe. Journalisation sous le logger `payments`. |
+| `shop` | Projet | **App métier historique, en cours de découpage. Ne porte plus ni modèle ni service.** Garde les vues des pages (catalogue, checkout, retour de paiement, compte), l'authentification par email, l'API REST, les gabarits et le JavaScript du panier, `healthz` et `metrics`. Catalogue → `catalog`, commandes et TVA → `orders`, emails → `notifications`, Stripe → `payments` (#49) ; accounts suivra. |
 
 ### Découpage interne de `shop`
 
@@ -219,7 +220,7 @@ La commande d'un autre client répond 404, pas 403 : un 403 confirmerait son exi
 
 ### Point d'entrée ajouté au Sprint 10
 
-`shop/views.py:428` définit `healthz`, câblée sur `/healthz/` (`shop/urls.py:21`). La vue exécute un `SELECT 1` et retourne :
+`shop/views.py:345` définit `healthz`, câblée sur `/healthz/` (`shop/urls.py:20`). La vue exécute un `SELECT 1` et retourne :
 
 - `200` et `{"status": "ok", "database": "reachable"}` si la base répond ;
 - `503` et `{"status": "degraded", "database": "unreachable"}` sinon.
@@ -228,7 +229,7 @@ Elle est sans authentification et sans gabarit : les sondes Kubernetes doivent p
 
 ### Point d'entrée ajouté au Sprint 14 : `/metrics`
 
-`shop/views.py:454` définit `metrics`, câblée sur `/metrics` (`shop/urls.py:23`). Avec `healthz`, c'est l'une des deux vues écrites pour l'infrastructure et non pour un utilisateur. Elle expose au format texte de Prometheus les **quatre signaux d'or**, définis dans `shop/metrics.py` avec la bibliothèque `prometheus-client` :
+`shop/views.py:371` définit `metrics`, câblée sur `/metrics` (`shop/urls.py:22`). Avec `healthz`, c'est l'une des deux vues écrites pour l'infrastructure et non pour un utilisateur. Elle expose au format texte de Prometheus les **quatre signaux d'or**, définis dans `shop/metrics.py` avec la bibliothèque `prometheus-client` :
 
 | Signal | Métrique | Type |
 |---|---|---|
@@ -240,7 +241,7 @@ Elle est sans authentification et sans gabarit : les sondes Kubernetes doivent p
 - **Alimentation** : un intergiciel du projet, `shop.middleware.PrometheusMetricsMiddleware`, placé en tête de `MIDDLEWARE` pour que la durée mesurée couvre toute la pile. `django-prometheus` n'est pas utilisé : sa version stable exige `Django<6.1`. Les noms de ses métriques sont repris, pour pouvoir y passer sans réécrire le tableau de bord.
 - **Cardinalité bornée** : l'étiquette `view` est le **nom de route** Django, jamais le chemin demandé ; une URL sans route est comptée sous `<inconnue>`.
 - **Agrégation entre workers** : Gunicorn lance 3 workers, chacun avec ses compteurs. `PROMETHEUS_MULTIPROC_DIR`, fixé par le Deployment sur un volume `emptyDir` (`k8s/base/04-django.yaml`), fait agréger les mesures de tous les workers ; la jauge utilise le mode `livesum`.
-- **Non publique** : la vue répond **404** dès que la requête porte `X-Forwarded-For`, `X-Real-IP` ou `Forwarded` (`ENTETES_DE_PROXY`, `shop/views.py:451`), en-têtes que pose ingress-nginx sur toute requête qu'il relaie. Depuis Internet, `/metrics` répond donc 404 ; Prometheus, qui interroge chaque pod directement (§3.5), obtient les métriques. 404 et non 403, comme pour les pages de commande.
+- **Non publique** : la vue répond **404** dès que la requête porte `X-Forwarded-For`, `X-Real-IP` ou `Forwarded` (`ENTETES_DE_PROXY`, `shop/views.py:368`), en-têtes que pose ingress-nginx sur toute requête qu'il relaie. Depuis Internet, `/metrics` répond donc 404 ; Prometheus, qui interroge chaque pod directement (§3.5), obtient les métriques. 404 et non 403, comme pour les pages de commande.
 - **Tests** : `shop/test_metriques.py`, 13 tests.
 
 ### En-têtes de sécurité HTTP

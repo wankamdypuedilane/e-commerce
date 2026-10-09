@@ -66,6 +66,7 @@ INSTALLED_APPS = [
     'catalog',
     'orders',
     'notifications',
+    'payments',
     'shop',
 ]
 
@@ -264,6 +265,12 @@ LOGGING = {
         },
         # Échec de rendu ou d'envoi des emails de confirmation (#49).
         'notifications': {
+            'handlers': ['console'],
+            'level': LOG_LEVEL,
+            'propagate': False,
+        },
+        # Webhook Stripe : signature refusée, traitement en échec (#49).
+        'payments': {
             'handlers': ['console'],
             'level': LOG_LEVEL,
             'propagate': False,

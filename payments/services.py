@@ -1,10 +1,16 @@
+"""Intégration Stripe : session de paiement et synchronisation (ADR-003, #49).
+
+Contrat de l'app payments : les vues de shop n'appellent que les fonctions
+de ce module. Le webhook est dans payments/views.py.
+"""
 import logging
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import Decimal
 
 from django.conf import settings
 from django.urls import reverse
 
 from notifications.services import send_order_confirmation_email
+from orders.services import get_tax_rate_percent
 
 logger = logging.getLogger(__name__)
 
@@ -20,21 +26,6 @@ def stripe_is_configured():
         and settings.STRIPE_SECRET_KEY
         and settings.STRIPE_PUBLIC_KEY
     )
-
-
-def get_tax_rate_percent():
-    raw_rate = str(getattr(settings, 'TAX_RATE_PERCENT', '20'))
-    try:
-        return Decimal(raw_rate)
-    except Exception:
-        return Decimal('20')
-
-
-def calculate_tax_totals(subtotal_ht):
-    rate_percent = get_tax_rate_percent()
-    tax_amount = (subtotal_ht * rate_percent / Decimal('100')).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
-    total_ttc = (subtotal_ht + tax_amount).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
-    return rate_percent, tax_amount, total_ttc
 
 
 def build_stripe_line_items(items_verifies, tax_amount=None, rate_percent=None):

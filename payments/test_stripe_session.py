@@ -10,7 +10,9 @@ from unittest.mock import patch
 
 from django.test import RequestFactory, SimpleTestCase, override_settings
 
-from .services import build_stripe_line_items, calculate_tax_totals, create_stripe_checkout_session
+from orders.services import calculate_tax_totals
+
+from .services import build_stripe_line_items, create_stripe_checkout_session
 
 CLES_STRIPE = dict(STRIPE_SECRET_KEY="sk_test_fake", STRIPE_PUBLIC_KEY="pk_test_fake")
 

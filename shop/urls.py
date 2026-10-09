@@ -7,7 +7,6 @@ from shop.views import (
     confirmation,
     payment_success,
     payment_cancel,
-    stripe_webhook,
     inscription,
     connexion,
     deconnexion,
@@ -22,7 +21,6 @@ urlpatterns = [
     # Metriques Prometheus, refusees si la requete vient de l'Ingress
     path('metrics', metrics, name='metrics'),
     path('api/produits/', search_products, name='search_products'),
-    path('webhooks/stripe/', stripe_webhook, name='stripe_webhook'),
     path('', index, name='home'),
     path('<int:myid>', detail, name='detail'),
     path('checkout', checkout, name="checkout"),
