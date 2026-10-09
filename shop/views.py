@@ -5,8 +5,6 @@ from django.http import JsonResponse
 from django.http import HttpResponse
 from django.contrib import messages
 from django.core.paginator import Paginator
-from django.contrib.auth import login, logout
-from .forms import SignupForm, EmailAuthenticationForm
 from django.contrib.auth.decorators import login_required
 from django.db import transaction
 from catalog.models import Category, Product
@@ -303,38 +301,6 @@ def payment_cancel(request):
 
     messages.info(request, "Le paiement a été annulé. Vous pouvez réessayer.")
     return redirect('checkout')
-
-
-def inscription(request):
-    if request.method == 'POST':
-        form = SignupForm(request.POST)
-        if form.is_valid():
-            user = form.save()
-            login(request, user)
-            messages.success(request, f"Bienvenue {user.username}, votre compte a été créé !")
-            return redirect('home')
-    else:
-        form = SignupForm()
-    return render(request, 'shop/inscription.html', {'form': form})
-
-
-def connexion(request):
-    if request.method == 'POST':
-        form = EmailAuthenticationForm(request, data=request.POST)
-        if form.is_valid():
-            user = form.get_user()
-            login(request, user)
-            messages.success(request, f"Bienvenue {user.username} !")
-            return redirect('home')
-    else:
-        form = EmailAuthenticationForm(request)
-    return render(request, 'shop/connexion.html', {'form': form})
-
-
-def deconnexion(request):
-    logout(request)
-    messages.success(request, "Vous avez été déconnecté.")
-    return redirect('home')
 
 
 @login_required(login_url='/connexion/')

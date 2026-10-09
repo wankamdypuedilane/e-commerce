@@ -9,6 +9,7 @@ source =
     orders
     notifications
     payments
+    accounts
     shop
     ecommerce
 # Exclus : ce qui n'a pas vocation à être testé

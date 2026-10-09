@@ -90,21 +90,21 @@ class ReinitialisationDuSiteTest(TestCase):
     def test_formulaire(self):
         reponse = self.client.get(reverse("password_reset"))
         self.assertEqual(reponse.status_code, 200)
-        self.assertTemplateUsed(reponse, "shop/password_reset_form.html")
+        self.assertTemplateUsed(reponse, "accounts/password_reset_form.html")
 
     def test_demande_envoie_un_email_puis_page_envoye(self):
         reponse = self.client.post(
             reverse("password_reset"), {"email": "client@example.com"}, follow=True,
         )
         self.assertEqual(reponse.status_code, 200)
-        self.assertTemplateUsed(reponse, "shop/password_reset_done.html")
+        self.assertTemplateUsed(reponse, "accounts/password_reset_done.html")
         self.assertEqual(len(mail.outbox), 1)
         self.assertIn("/reinitialisation/", mail.outbox[0].body)
 
     def test_page_envoye(self):
         reponse = self.client.get(reverse("password_reset_done"))
         self.assertEqual(reponse.status_code, 200)
-        self.assertTemplateUsed(reponse, "shop/password_reset_done.html")
+        self.assertTemplateUsed(reponse, "accounts/password_reset_done.html")
 
     def test_lien_valide_puis_nouveau_mot_de_passe(self):
         """Le lien de l'email mène au formulaire, qui change le mot de passe."""
@@ -114,7 +114,7 @@ class ReinitialisationDuSiteTest(TestCase):
 
         reponse = self.client.get(lien, follow=True)
         self.assertEqual(reponse.status_code, 200)
-        self.assertTemplateUsed(reponse, "shop/password_reset_confirm.html")
+        self.assertTemplateUsed(reponse, "accounts/password_reset_confirm.html")
         self.assertTrue(reponse.context["validlink"])
 
         reponse = self.client.post(
@@ -122,14 +122,14 @@ class ReinitialisationDuSiteTest(TestCase):
             {"new_password1": "Nouveau-passe-42", "new_password2": "Nouveau-passe-42"},
             follow=True,
         )
-        self.assertTemplateUsed(reponse, "shop/password_reset_complete.html")
+        self.assertTemplateUsed(reponse, "accounts/password_reset_complete.html")
         self.user.refresh_from_db()
         self.assertTrue(self.user.check_password("Nouveau-passe-42"))
 
     def test_page_terminee(self):
         reponse = self.client.get(reverse("password_reset_complete"))
         self.assertEqual(reponse.status_code, 200)
-        self.assertTemplateUsed(reponse, "shop/password_reset_complete.html")
+        self.assertTemplateUsed(reponse, "accounts/password_reset_complete.html")
 
 
 @override_settings(PASSWORD_HASHERS=HACHEUR_RAPIDE)
