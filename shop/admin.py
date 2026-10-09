@@ -1,20 +1,11 @@
 from django.contrib import admin
-from .models import Category, Product, Commande, OrderItem
+from .models import Commande, OrderItem
 from django.utils.html import format_html_join
 
 admin.site.site_header = "E-commerce"
 admin.site.site_title = "SBC-shop"
 admin.site.index_title = "Manageur"
 
-
-class AdminCategorie(admin.ModelAdmin):
-    list_display = ('name', 'date_added')
-
-
-class AdminProduct(admin.ModelAdmin):
-    list_display  = ('title', 'price', 'category', 'stock')
-    search_fields = ('title',)
-    list_editable = ('price', 'stock')  
 
 class AdminCommande(admin.ModelAdmin):
     list_display  = ('panier_lisible', 'nom', 'email', 'subtotal_ht', 'tax_amount', 'total', 'status', 'payment_status', 'date_commande')
@@ -52,8 +43,6 @@ class OrderItemInline(admin.TabularInline):
 AdminCommande.inlines = [OrderItemInline]
 
 
-admin.site.register(Product, AdminProduct)
-admin.site.register(Category, AdminCategorie)
 admin.site.register(Commande, AdminCommande)
 
 

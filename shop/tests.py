@@ -5,7 +5,8 @@ from django.contrib.auth import get_user_model
 from django.test import TestCase, override_settings
 from django.urls import reverse
 
-from .models import Category, Commande, OrderItem, Product
+from catalog.models import Category, Product
+from .models import Commande, OrderItem
 
 
 User = get_user_model()

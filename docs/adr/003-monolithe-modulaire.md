@@ -4,6 +4,8 @@
 
 Accepté — 20/09/2026. Décision actée ; implémentation prévue au **Sprint 12**, après la mise en place des tests du Sprint 11. Issue #14.
 
+**En cours de mise en œuvre — 09/10/2026.** Première app extraite : `catalog` (#49). Voir [Mise en œuvre](#mise-en-œuvre).
+
 ---
 
 ## Contexte
@@ -97,6 +99,21 @@ Cette décision sera réexaminée si l'une des conditions suivantes est constat�
 3. **Les cycles de publication deviennent incompatibles.** Si une partie du domaine doit être publiée plusieurs fois par jour pendant qu'une autre exige une validation longue, le déploiement unique devient contraignant.
 
 La révision portera alors sur un périmètre précis, pas sur l'architecture entière : l'extraction se fera app par app, en commençant par celle dont la frontière aura le moins d'appels de service entrants.
+
+---
+
+## Mise en œuvre
+
+Le découpage avance app par app, une PR à chaque fois, avec la suite de tests comme filet (#49).
+
+### Étape 1 — `catalog` (09/10/2026)
+
+`Category` et `Product` ont quitté `shop` pour l'app `catalog`, avec leur administration.
+
+- **Aucune opération sur la base.** Les tables gardent leur nom (`Meta.db_table = 'shop_category'` et `'shop_product'`). `catalog/migrations/0001_initial.py` et `shop/migrations/0017` utilisent `SeparateDatabaseAndState` sans opération de base de données : `sqlmigrate` ne produit aucun SQL. Les données, les index et la clé étrangère de `shop_orderitem` restent en place.
+- **Types de contenu renommés, pas recréés.** Sans cela, Django aurait créé `catalog.product` à côté de `shop.product`, et les permissions déjà attribuées ainsi que les liens de l'historique d'administration seraient restés sur l'ancien type. La migration renomme les deux types en conservant leurs identifiants. Elle gère aussi le retour arrière : le type vide que Django recrée lors d'un `migrate` en arrière est remplacé par l'original.
+- **Vérifié sur une base peuplée** (catalogue de démonstration, une commande, une permission de groupe, une permission directe, une entrée d'historique) : seul `app_label` change sur les deux types de contenu ; aller, retour puis aller de nouveau ramènent exactement aux mêmes états. `catalog/tests.py` rejoue la migration et échoue si le renommage disparaît.
+- **Écart à la règle de frontière, assumé pour cette étape.** `shop` importe encore `catalog.models` directement (vues, API, administration, tests). Le passage par un `catalog/services.py` viendra quand les autres apps seront extraites, pour ne pas mêler deux refactorisations dans la même PR.
 
 ---
 

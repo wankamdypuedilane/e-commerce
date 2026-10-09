@@ -189,7 +189,8 @@ e-commerce/
 | `django.contrib.sessions` | Django | Sessions d'authentification. Backend par défaut (base de données). |
 | `django.contrib.messages` | Django | Utilisé par 7 appels `messages.*` dans `shop/views.py` (succès checkout, connexion, inscription, déconnexion, annulation de paiement, erreurs de retour Stripe). |
 | `django.contrib.staticfiles` | Django | Collecte `shop/static/` vers `STATIC_ROOT = BASE_DIR / 'staticfiles'`. Depuis le Sprint 9, les fichiers sont **servis par WhiteNoise**, pas par Nginx : middleware `whitenoise.middleware.WhiteNoiseMiddleware` en troisième position (`settings.py:72`) et `STORAGES['staticfiles']` en `CompressedManifestStaticFilesStorage` (`settings.py:202-209`). `collectstatic` est exécuté pendant la construction de l'image. |
-| `shop` | Projet | **Unique app métier.** Porte la totalité du domaine : catalogue, panier côté client, commandes, paiement Stripe, emails, authentification par email. Aucune séparation en sous-apps (pas d'app `orders`, `payments` ou `accounts` distincte). Le découpage en six apps est prévu au Sprint 12, conformément à l'[ADR-003](adr/003-monolithe-modulaire.md). |
+| `catalog` | Projet | **Catalogue** (#49, première étape du découpage de l'[ADR-003](adr/003-monolithe-modulaire.md)). Modèles `Category` et `Product`, et leur administration (`catalog/admin.py`). Les tables gardent leur nom d'origine, `shop_category` et `shop_product` (`Meta.db_table`) : le déplacement n'a modifié que l'état des migrations, pas la base. |
+| `shop` | Projet | **App métier historique, en cours de découpage.** Porte encore le panier côté client, les commandes, le paiement Stripe, les emails et l'authentification par email. Le catalogue en est sorti (app `catalog`, #49) ; les autres apps prévues par l'[ADR-003](adr/003-monolithe-modulaire.md) suivront une par une. |
 
 ### Découpage interne de `shop`
 

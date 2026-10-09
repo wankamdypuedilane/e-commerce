@@ -26,7 +26,8 @@ from rest_framework.authtoken.models import Token
 from rest_framework.test import APIClient
 from rest_framework.throttling import SimpleRateThrottle
 
-from .models import Category, Commande, OrderItem, Product
+from catalog.models import Category, Product
+from .models import Commande, OrderItem
 
 User = get_user_model()
 MOT_DE_PASSE = "Mot-de-passe-de-test-42"

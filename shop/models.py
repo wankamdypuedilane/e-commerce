@@ -2,42 +2,6 @@ from django.db import models
 from django.contrib.auth.models import User 
 
 
-class Category(models.Model):
-    name       = models.CharField(max_length=200)
-    date_added = models.DateTimeField(auto_now_add=True)  # auto_now_add pas auto_now
-
-    class Meta:
-        ordering     = ['name']
-        verbose_name_plural = 'Catégories'
-
-    def __str__(self):
-        return self.name
-
-
-class Product(models.Model):
-    title       = models.CharField(max_length=200)
-    price       = models.DecimalField(max_digits=10, decimal_places=2)  # plus FloatField
-    description = models.TextField()
-    category    = models.ForeignKey(Category, related_name='products', on_delete=models.CASCADE)
-    image       = models.CharField(max_length=5000, blank=True, default='')  # URL legacy
-    image_file  = models.ImageField(upload_to='products/', blank=True, null=True)
-    stock       = models.PositiveIntegerField(default=0) 
-
-    class Meta:
-        ordering = ['title']
-        verbose_name = 'Produit'
-        verbose_name_plural = 'Produits'
-
-    def __str__(self):
-        return self.title
-
-    @property
-    def display_image_url(self):
-        if self.image_file:
-            return self.image_file.url
-        return self.image or ''
-
-
 class Commande(models.Model):
 
     STATUS_CHOICES = [
@@ -84,7 +48,7 @@ class Commande(models.Model):
 
 class OrderItem(models.Model):
     commande = models.ForeignKey(Commande, related_name='order_items', on_delete=models.CASCADE)
-    product = models.ForeignKey(Product, on_delete=models.SET_NULL, null=True, blank=True)
+    product = models.ForeignKey('catalog.Product', on_delete=models.SET_NULL, null=True, blank=True)
     price = models.DecimalField(max_digits=10, decimal_places=2)
     quantity = models.PositiveIntegerField()
 

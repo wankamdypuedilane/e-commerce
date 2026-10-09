@@ -26,7 +26,7 @@ from django.urls import reverse
 from django.utils.encoding import force_bytes
 from django.utils.http import urlsafe_base64_encode
 
-from .models import Category, Product
+from catalog.models import Category, Product
 
 User = get_user_model()
 HACHEUR_RAPIDE = ["django.contrib.auth.hashers.MD5PasswordHasher"]

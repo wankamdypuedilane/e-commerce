@@ -3,7 +3,8 @@ from rest_framework.authtoken.views import ObtainAuthToken
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.throttling import AnonRateThrottle
 
-from shop.models import Category, Commande, Product
+from catalog.models import Category, Product
+from shop.models import Commande
 
 from .serializers import CategorySerializer, CommandeSerializer, ProductSerializer
 
