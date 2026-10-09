@@ -15,7 +15,7 @@ from unittest.mock import patch
 
 import stripe
 from django.core import mail
-from django.test import TestCase, override_settings
+from django.test import Client, TestCase, override_settings
 from django.urls import reverse
 
 from catalog.models import Category, Product
@@ -88,14 +88,14 @@ class StripeWebhookTest(TestCase):
 
     @override_settings(STRIPE_WEBHOOK_SECRET="")
     def test_refuse_si_secret_absent(self):
-        with self.assertLogs("shop", level="ERROR"):
+        with self.assertLogs("payments", level="ERROR"):
             reponse = self.envoyer()
         self.assertEqual(reponse.status_code, 400)
         self.rafraichir()
         self.assertEqual(self.produit.stock, 10)
 
     def test_refuse_signature_invalide(self):
-        with self.assertLogs("shop", level="ERROR"):
+        with self.assertLogs("payments", level="ERROR"):
             reponse = self.envoyer(secret="whsec_mauvais_secret")
         self.assertEqual(reponse.status_code, 400)
         self.rafraichir()
@@ -158,8 +158,36 @@ class StripeWebhookTest(TestCase):
         il ne réessaierait jamais, et le paiement serait perdu côté boutique.
         Les réessais sont sans danger, le traitement étant idempotent.
         """
-        with self.assertLogs("shop", level="ERROR"):
+        with self.assertLogs("payments", level="ERROR"):
             reponse = self.envoyer()
         self.assertEqual(reponse.status_code, 500)
         self.rafraichir()
         self.assertEqual(self.produit.stock, 10)
+
+    # --- Adresse et protection CSRF -------------------------------------------
+
+    def test_adresse_du_webhook_inchangee(self):
+        """L'adresse est enregistrée dans le tableau de bord Stripe.
+
+        La changer couperait la confirmation des paiements sans erreur
+        visible : Stripe enverrait ses événements à une adresse morte.
+        """
+        self.assertEqual(self.url, "/webhooks/stripe/")
+
+    @patch("stripe.checkout.Session.retrieve", return_value=session_stripe("paid"))
+    def test_accepte_sans_jeton_csrf(self, _retrieve):
+        """Stripe n'envoie pas de jeton CSRF : la vue doit en être exemptée.
+
+        Le client de test de Django ne vérifie pas le CSRF par défaut ; il
+        faut le demander explicitement, sinon la perte de @csrf_exempt
+        passerait inaperçue.
+        """
+        client = Client(enforce_csrf_checks=True)
+        payload = evenement("checkout.session.completed")
+        reponse = client.post(
+            self.url, data=payload, content_type="application/json",
+            HTTP_STRIPE_SIGNATURE=signer(payload),
+        )
+        self.assertEqual(reponse.status_code, 200)
+        self.rafraichir()
+        self.assertEqual(self.produit.stock, 8)

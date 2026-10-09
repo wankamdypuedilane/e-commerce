@@ -8,6 +8,7 @@ source =
     catalog
     orders
     notifications
+    payments
     shop
     ecommerce
 # Exclus : ce qui n'a pas vocation à être testé

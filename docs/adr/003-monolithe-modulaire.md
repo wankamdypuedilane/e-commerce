@@ -4,7 +4,7 @@
 
 Accepté — 20/09/2026. Décision actée ; implémentation prévue au **Sprint 12**, après la mise en place des tests du Sprint 11. Issue #14.
 
-**En cours de mise en œuvre — 09/10/2026.** Apps extraites : `catalog`, `orders`, puis `notifications` (#49). Voir [Mise en œuvre](#mise-en-œuvre).
+**En cours de mise en œuvre — 09/10/2026.** Apps extraites : `catalog`, `orders`, `notifications`, puis `payments` (#49). Voir [Mise en œuvre](#mise-en-œuvre).
 
 ---
 
@@ -136,6 +136,17 @@ Première app sans modèle : seul du code et des gabarits changent de place.
 - **Journalisation.** Les messages du module portent désormais le logger `notifications`, déclaré dans `LOGGING` comme `shop`.
 - **Vérifié à l'identique.** L'email (sujet, destinataire, texte, HTML) a été généré avant et après le déplacement pour une même commande, avec un produit supprimé et des caractères spéciaux : sortie identique au caractère près.
 - **Défaut existant relevé, non corrigé ici** : la version texte de l'email est échappée comme du HTML (« Jean & Co » y devient « Jean &amp; Co »). Le corriger changerait le comportement  ; issue #132.
+
+### Étape 4 — `payments` (09/10/2026)
+
+L'intégration Stripe quitte `shop`, sans changement de logique.
+
+- **`payments/services.py`** : `stripe_is_configured`, `build_stripe_line_items`, `create_stripe_checkout_session`, `sync_commande_payment_from_stripe`. **`payments/views.py`** : le webhook, seul code qui décrémente le stock.
+- **TVA vers `orders/services.py`** (`get_tax_rate_percent`, `calculate_tax_totals`). `build_stripe_line_items` en dépend ; la placer dans `orders`, qui porte les règles de la commande, évite que `payments` dépende du reste de `shop`. `shop/services.py` disparaît.
+- **Adresse du webhook inchangée** (`/webhooks/stripe/`), enregistrée dans le tableau de bord Stripe. Les 96 routes du site ont été comparées avant et après : identiques. Un test fige désormais l'adresse.
+- **Exemption CSRF testée.** Stripe n'envoie pas de jeton CSRF ; la perte de `@csrf_exempt` pendant le déplacement aurait fait refuser chaque événement (403). Le client de test de Django ne vérifie pas le CSRF par défaut : le nouveau test le demande explicitement, et échoue bien sans le décorateur.
+- **Journalisation** sous le logger `payments`, déclaré dans `LOGGING`.
+- **Écart à la règle de frontière, toujours présent** : le webhook manipule directement `Commande`, `OrderItem` et `Product` (verrous `select_for_update`, drapeau `stock_deducted`). Le faire passer par des services d'`orders` et de `catalog` touche à la transaction qui garantit l'idempotence ; c'est un changement de comportement possible, à faire séparément et à tester sous appels simultanés (#67).
 
 ---
 
